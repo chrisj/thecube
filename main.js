@@ -96,6 +96,35 @@ var selectedColor = [0, 255, 0];
 // var selectSegIdTween = null;
 // var hideSegIdTween = null;
 
+function SegmentProxy(segId) {
+
+  var mesh = SegmentManager.meshes[segId];
+
+  return {
+    get opacity() {
+      return mesh.material.uniforms.opacity.value;
+    },
+
+    set opacity(op) {
+      mesh.material.uniforms.opacity.value = op;
+
+      console.log(op);
+
+      var eps = 0.05;
+
+      if (op < eps) {
+        mesh.visible = false;
+      } else if (op === 1) {
+        mesh.visible = true;
+        // mesh.material.transparent = false; // TODO, why does this cause the segment to blip?
+      } else {
+        mesh.visible = true;
+        mesh.material.transparent = true;
+      }
+    }
+  }
+}
+
 var SegmentManager = {
   // defaults, reset in loadForTask
   selected: [],
@@ -123,7 +152,7 @@ var SegmentManager = {
 
     if (op < eps) {
       this._visible = false;
-    } if (op === 1) {
+    } else if (op === 1) {
       this._visible = true;
       this._transparent = false;
     } else {
@@ -162,16 +191,21 @@ var SegmentManager = {
       var duration = 500;
 
       if (controls.snapState === controls.SNAP_STATE.ORTHO) {
-        var indvTweenOut = new TWEEN.Tween(_this.meshes[segId].material.uniforms.opacity).to({ value: 1.0 }, duration).onUpdate(function () {
+        _this.meshes[segId].visible = true;
+        _this.meshes[segId].material.transparent = true;
+        var indvTweenOut = new TWEEN.Tween(SegmentProxy(segId)).to({ opacity: 1.0 }, duration).onUpdate(function () {
           needsRender = true;
         })
         .repeat(1)
         .yoyo(true)
+        .onComplete(function () {
+          _this.meshes[segId].visible = false;
+        })
         .start();
 
-        var indvTween = new TWEEN.Tween(_this.meshes[segId].material.uniforms.opacity).to({ opacity: 0.8 }, duration).onUpdate(function () {
-          needsRender = true;
-        }).start();
+        // var indvTween = new TWEEN.Tween(SegmentProxy(segId)).to({ opacity: 0.8 }, duration).onUpdate(function () {
+        //   needsRender = true;
+        // }).start();
 
 
         var reshowPlaneTween = new TWEEN.Tween(PlaneManager).to({ opacity: 1.0 }, duration).onUpdate(function () {
@@ -182,7 +216,7 @@ var SegmentManager = {
           needsRender = true;
         }).chain(reshowPlaneTween).start();
       } else {
-        var indvTweenOut = new TWEEN.Tween(_this.meshes[segId].material.uniforms.opacity).to({ value: SegmentManager.opacity }, duration).onUpdate(function () {
+        var indvTweenOut = new TWEEN.Tween(SegmentProxy(segId)).to({ opacity: SegmentManager.opacity }, duration).onUpdate(function () {
           needsRender = true;
         }).start();
       }
@@ -214,7 +248,7 @@ var SegmentManager = {
 
     var segMesh = this.meshes[segId];
 
-    var showSeg = new TWEEN.Tween(this.meshes[segId].material.uniforms.opacity).to({ value: 1.0 }, duration / 2)
+    var showSeg = new TWEEN.Tween(SegmentProxy(segId)).to({ opacity: 1.0 }, duration / 2)
     .onUpdate(function () {
         needsRender = true;
     })
@@ -226,22 +260,14 @@ var SegmentManager = {
     var randomX = Math.random() * 8 - 4;
     var randomY = Math.random() * 8 - 4;
 
-    setTimeout(function () {
+    var launchSeg = new TWEEN.Tween(segMesh.position).to({ x: randomX, y: randomY, z: "-5" }, duration)
+    .easing(TWEEN.Easing.Cubic.In)
+    .onUpdate(function () {
+        needsRender = true;
+    }).onComplete(function () {
       segments.remove(segMesh);
-      // segMesh.position.set(0, 0, 0);
-    }, duration);
-
-    // var launchSeg = new TWEEN.Tween(segMesh.position).to({ x: randomX, y: randomY, z: "-5" }, duration)
-    // .easing(TWEEN.Easing.Cubic.In)
-    // .onUpdate(function () {
-    //     needsRender = true;
-    // }).onComplete(function () {
-    //   segments.remove(segMesh);
-    //   segMesh.position.set(0, 0, 0);
-    // }).start();
-
-    // segments.remove(this.meshes[segId]);
-    // needsRender = true;
+      segMesh.position.set(0, 0, 0);
+    }).start();
   },
   loadForTask: function (task) {
     this.selected = [];
@@ -1274,6 +1300,12 @@ function handleInput() {
 
   if (key('r', PRESSED)) {
     needsRender = true;
+  }
+
+  if (key('p', PRESSED)) {
+    segments.children.map(function (segment) {
+      console.log(segment.material.uniforms.opacity.value, segment.visible, segment.material.transparent);
+    });
   }
 
   tileDelta(td);
