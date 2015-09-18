@@ -226,14 +226,19 @@ var SegmentManager = {
     var randomX = Math.random() * 8 - 4;
     var randomY = Math.random() * 8 - 4;
 
-    var launchSeg = new TWEEN.Tween(segMesh.position).to({ x: randomX, y: randomY, z: "-5" }, duration)
-    .easing(TWEEN.Easing.Cubic.In)
-    .onUpdate(function () {
-        needsRender = true;
-    }).onComplete(function () {
+    setTimeout(function () {
       segments.remove(segMesh);
-      segMesh.position.set(0, 0, 0);
-    }).start();
+      // segMesh.position.set(0, 0, 0);
+    }, duration);
+
+    // var launchSeg = new TWEEN.Tween(segMesh.position).to({ x: randomX, y: randomY, z: "-5" }, duration)
+    // .easing(TWEEN.Easing.Cubic.In)
+    // .onUpdate(function () {
+    //     needsRender = true;
+    // }).onComplete(function () {
+    //   segments.remove(segMesh);
+    //   segMesh.position.set(0, 0, 0);
+    // }).start();
 
     // segments.remove(this.meshes[segId]);
     // needsRender = true;
