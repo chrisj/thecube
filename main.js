@@ -1116,7 +1116,7 @@ function handleChange () {
 
     var angle = targetFacingVec.angleTo(currentFacingVec);
 
-    function segmentOpacity(currentOpacity, angle, min, max) {
+    var segmentOpacity = function (currentOpacity, angle, min, max) {
       if (angle === 0) {
         return 0;
       } else if (angle < currentOpacity && angle < min) {
