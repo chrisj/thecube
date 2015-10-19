@@ -165,7 +165,7 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 			var p = 1 - o.t;
 			camera.fov = Math.min(camera.fov, camera.orthoFov * (1 - p) + camera.perspFov * p);
 
-			SegmentManager.opacity = currentSegOpacity * p;
+			SegmentManager.opacity = Math.min(SegmentManager.opacity, p);
 		    PlaneManager.opacity = o.t * 0.2 + 0.8;
 
 			// _this.dispatchEvent(snapUpdateEvent, o.t);
