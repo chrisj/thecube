@@ -539,7 +539,7 @@ function resizeCanvas() {
   overlayCanvas.width = window.innerWidth;
   overlayCanvas.height = window.innerHeight;
 
-  overlayContext.fillStyle = "rgba(255, 255, 255, 0.5)";
+  overlayContext.fillStyle = "rgba(0, 0, 0, 0.5)";
   overlayContext.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
   overlayContext.beginPath();
@@ -554,7 +554,7 @@ function resizeCanvas() {
   overlayContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
   overlayContext.restore();
 
-  overlayContext.strokeStyle = "#000";
+  overlayContext.strokeStyle = "#fff";
   overlayContext.stroke();
 }
 resizeCanvas();
@@ -670,7 +670,7 @@ scene.add(light);
 light.name = "pixar light";
 
 var wireframe = new THREE.BoxHelper(cube);
-wireframe.material.color.set("#000000");
+wireframe.material.color.set("#888888");
 scene.add(wireframe);
 
 wireframe.name = "ol' wires";
@@ -682,7 +682,7 @@ cube.add(segments);
 segments.name = 'is segacious a word?';
 
 var controls = new THREE.RotateCubeControls(pivot, camera, SegmentManager, PlaneManager);
-controls.rotateSpeed = 1.2;
+controls.rotateSpeed = 1.0;
   // controls.staticMoving = true; // TODO maybe dynamic is better?
   // controls.dynamicDampingFactor = 0.5;
   // controls.snap();
@@ -757,9 +757,9 @@ var planes = {};
 
 
     var test = new THREE.Mesh( new THREE.BoxGeometry( 0.1, 0.1, 0.1 ), new THREE.MeshNormalMaterial({
-  transparent: false,
-  opacity: 1
-}) );
+      transparent: false,
+      opacity: 1
+    }));
 // test.position.set(0, 0, 1);
 // planes.z.add(test);
   }
@@ -880,7 +880,7 @@ function displayMeshForVolumeAndSegId(volume, segId, done) {
 // loads the VOA mesh for the given segment in the given chunk from the EyeWire data server into a Three JS mesh.
 // passes the mesh to the done handler as a single argument or passes false if there is no mesh for the given segment in the chunk
 function getDataForVolumeXYZAndSegId(volume, chunk, segId, done) {
-  var meshUrl = 'http://testdata.eyewire.org/volume/' + volume + '/chunk/0/'+ chunk[0] + '/' + chunk[1] + '/' + chunk[2] + '/mesh/' + segId;
+  var meshUrl = 'http://cache.eyewire.org/volume/' + volume + '/chunk/0/'+ chunk[0] + '/' + chunk[1] + '/' + chunk[2] + '/mesh/' + segId;
 
   var req = new XMLHttpRequest();
   req.open("GET", meshUrl, true);
@@ -990,7 +990,7 @@ function playTask(task) {
 function start() {
   //1029032
   //1043593  this one has segment 
-  $.post('https://eyewire.org/2.0/tasks/testassign').done(playTask);
+  $.post('https://tasking.eyewire.org/1.0/tasks/1043593/testassign').done(playTask);
 }
 start();
 
@@ -1147,22 +1147,25 @@ function handleChange () {
 
     var angle = targetFacingVec.angleTo(currentFacingVec);
 
-    var segmentOpacity = function (currentOpacity, angle, min, max) {
-      if (angle === 0) {
-        return 0;
-      } else if (angle < currentOpacity && angle < min) {
-        return Math.min(min, currentOpacity);
-      } else {
-        return Math.min(max, angle);
-      }
-    }
+    // var segmentOpacity = function (currentOpacity, angle, min, max) {
+    //   if (angle === 0) {
+    //     return 0;
+    //   } else if (angle < currentOpacity && angle < min) {
+    //     return Math.min(min, currentOpacity);
+    //   } else {
+    //     return Math.min(max, angle);
+    //   }
+    // }
 
 
     var p = Math.min(1, angle / (Math.PI / 4));
-    var op = segmentOpacity(SegmentManager.opacity, p, 0.3, 1);
 
-    PlaneManager.opacity = Math.max(1 - op, 0.8);
+    var op = Math.max(SegmentManager.opacity, p*4);
+
+    // var op = segmentOpacity(SegmentManager.opacity, p, 0.3, 1);
+
     SegmentManager.opacity = op;
+    PlaneManager.opacity = Math.max(1 - op, 0.8);
 
     camera.fov = Math.max(camera.fov, camera.orthoFov * (1 - p) + camera.perspFov * p);
   }

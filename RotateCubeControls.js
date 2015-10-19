@@ -6,7 +6,7 @@
 THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManager) { // EWWWW
 
 	var _this = this;
-	var STATE = { NONE: 1, ROTATE: 2, ANIMATE: 3};
+	var STATE = { NONE: 1, ROTATE: 2, ANIMATE: 3, OOB: 4};
 	var SNAP_STATE = { NONE: 1, BEGIN: 2, ORTHO: 3, SHIFT: 4 };
 	
 	this.SNAP_STATE = SNAP_STATE;
@@ -16,8 +16,6 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 	this.object = object;
 
 	// API
-
-	this.enabled = true;
 
 	this.screen = { left: 0, top: 0, width: 0, height: 0 };
 
@@ -29,7 +27,7 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 	// internals
 
 	var _state = STATE.NONE,
-	_prevState = STATE.NONE,
+	// _prevState = STATE.NONE,
 
 	_rotateStart = new THREE.Vector3(),
 	_rotateEnd = new THREE.Vector3(),
@@ -81,13 +79,20 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 				0.0
 			);
 
+			// mouseOnBall.set(
+			// 	( ( 2 * pageX - _this.screen.width) / _this.screen.width ),
+			// 	( ( _this.screen.height - 2 * pageY) / _this.screen.width ), // screen.width intentional
+			// 	1
+			// );
+
 			var length = mouseOnBall.length();
 
-			if (length > 1.0) {
-				mouseOnBall.normalize();
-			} else {
+			// if (length > 1.0) {
+				// return null;
+				// mouseOnBall.normalize();
+			// } else {
 				mouseOnBall.z = Math.sqrt( 1.0 - length * length );
-			}
+			// }
 
 			return mouseOnBall;
 
@@ -105,6 +110,7 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 			var angle = Math.acos( _rotateStart.dot( _rotateEnd ) / _rotateStart.length() / _rotateEnd.length() );
 
 			if ( angle ) {
+				// console.log('angle', angle);
 				if (_this.snapState === SNAP_STATE.ORTHO) {
 					_this.snapState = SNAP_STATE.SHIFT;
 				}
@@ -123,9 +129,11 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 
 				// TODO, only switch to 'dynamic' on mouseup
 				if (_state === STATE.NONE) {
-					quaternion.setFromAxisAngle( axis, angle * 0.1 ).normalize();
+					quaternion.setFromAxisAngle( axis, angle * 0.2 ).normalize();
+					_rotateStart.applyQuaternion( quaternion );
+				} else {
+					_rotateStart.copy(_rotateEnd);
 				}
-				_rotateStart.applyQuaternion( quaternion );
 			}
 		}
 
@@ -134,7 +142,6 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 	var prevQuat = _this.object.quaternion.clone();
 
 	this.update = function () {
-
 		if (_state !== STATE.ANIMATE) {
 			_this.rotateObject(); // TODO, should ignore input as well
 		}
@@ -165,7 +172,7 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 			var p = 1 - o.t;
 			camera.fov = Math.min(camera.fov, camera.orthoFov * (1 - p) + camera.perspFov * p);
 
-			SegmentManager.opacity = Math.min(SegmentManager.opacity, p);
+			SegmentManager.opacity = currentSegOpacity * p;
 		    PlaneManager.opacity = o.t * 0.2 + 0.8;
 
 			// _this.dispatchEvent(snapUpdateEvent, o.t);
@@ -339,10 +346,7 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 
 	// listeners
 	function keydown( event ) {
-
-		if ( _this.enabled === false ) return;
-
-		_prevState = _state;
+		// _prevState = _state;
 
 		// if ( _state !== STATE.NONE ) {
 			// return;
@@ -359,8 +363,6 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 
 	function keyup( event ) {
 
-		// if ( _this.enabled === false ) return;
-
 		// _state = _prevState;
 
 		// window.addEventListener( 'keydown', keydown, false );
@@ -368,9 +370,6 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 	}
 
 	function mousedown( event ) {
-
-		if ( _this.enabled === false ) return;
-
 		event.preventDefault();
 		event.stopPropagation();
 
@@ -381,9 +380,15 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 			}
 		}
 
-		if ( _state === STATE.ROTATE && !_this.noRotate ) {
+		if ( _state === STATE.ROTATE) {
+			var ballPosition = getMouseProjectionOnBall( event.pageX, event.pageY );
 
-			_rotateStart.copy( getMouseProjectionOnBall( event.pageX, event.pageY ) );
+			if (ballPosition) {
+				_rotateStart.copy(ballPosition);
+				_rotateEnd.copy( _rotateStart );
+			}
+
+			// _rotateStart.copy( getMouseProjectionOnBall( event.pageX, event.pageY ) );
 			_rotateEnd.copy( _rotateStart );
 
 		}
@@ -395,15 +400,26 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 
 	}
 
-	function mousemove( event ) {
+	var lastEvent = null;
 
-		if ( _this.enabled === false ) return;
+	function mousemove( event ) {
 
 		event.preventDefault();
 		event.stopPropagation();
 
-		if ( _state === STATE.ROTATE && !_this.noRotate ) {
-			_rotateEnd.copy( getMouseProjectionOnBall( event.pageX, event.pageY ) );
+		lastEvent = event;
+
+		if ( _state === STATE.ROTATE || _state === STATE.OOB) {
+			var ballPosition = getMouseProjectionOnBall( event.pageX, event.pageY );
+
+			if (ballPosition) {
+				_state === STATE.ROTATE;
+				_rotateEnd.copy(ballPosition);
+			} else {
+				if (_state === STATE.ROTATE) {
+					_state === STATE.OOB;
+				}
+			}
 		}
 
 	}
@@ -411,10 +427,16 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 	function mouseup( event ) {
 		// todo, this is screwing up animations
 
-		if ( _this.enabled === false ) return;
-
 		event.preventDefault();
 		event.stopPropagation();
+
+		if (_state === STATE.ROTATE && _rotateEnd.equals(_rotateStart)) {
+			console.log('do the magic');
+			// too hackish, this fixes the previous problem:
+			// if update happens between mousemove and mouse up, the last mousemove event is performed in rotateObject
+			// and the cube will do a hard stop
+			_rotateEnd.copy (getMouseProjectionOnBall(lastEvent.pageX + lastEvent.movementX, lastEvent.pageY + lastEvent.movementY));
+		}
 
 		_state = STATE.NONE;
 
