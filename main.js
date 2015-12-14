@@ -801,6 +801,7 @@ var camera = (function (perspFov, viewHeight) {
     _viewHeight: viewHeight,
     _fakeViewHeight: simpleViewHeight(perspFov, viewHeight),
     set viewHeight(vH) {
+      console.log('viewHeight', vH);
       this._viewHeight = vH;
       this._fakeViewHeight = simpleViewHeight(perspFov, vH);
       this.fov = this.fov; // hahaha
@@ -1393,13 +1394,21 @@ function mousewheel( event ) {
   event.preventDefault();
   event.stopPropagation();
 
-  tileDelta(event.deltaY / 40);
+  if (event.deltaY > 0) {
+    camera.viewHeight /= 19/20;
+  } else {
+    camera.viewHeight *= 19/20;
+  }
+
+  needsRender = true;
+
+  // tileDelta(event.deltaY / 40);
 }
 
 document.addEventListener('mouseup', mouseup, false);
 document.addEventListener('mousemove', mousemove, false);
 document.addEventListener('mousedown', mousedown, false);
-// document.addEventListener('wheel', mousewheel, false);
+document.addEventListener('wheel', mousewheel, false);
 
 
 function handleChange () {
@@ -1442,16 +1451,18 @@ function animateToPositionAndZoom(point, zoomLevel, reset) {
       animating = false;
     }).start();
 
-  new TWEEN.Tween(camera).to({viewHeight: 2/zoomLevel}, duration)
-    .easing(TWEEN.Easing.Sinusoidal.InOut).onUpdate(function () {
-      needsRender = true;
-    }).onComplete(function () {
-      console.log('done animating');
-      animating = false;
-    }).start();
+  // new TWEEN.Tween(camera).to({viewHeight: 2/zoomLevel}, duration)
+  //   .easing(TWEEN.Easing.Sinusoidal.InOut).onUpdate(function () {
+  //     needsRender = true;
+  //   }).onComplete(function () {
+  //     console.log('done animating');
+  //     animating = false;
+  //   }).start();
 }
 
 function resetZoom() {
+  camera.viewHeight = 2;
+  needsRender = true;
   animateToPositionAndZoom(new THREE.Vector3(0, 0, 0), 1, true);
 }
 
