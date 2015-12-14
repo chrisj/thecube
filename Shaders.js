@@ -3,6 +3,38 @@
  **/
 
 Shaders = {
+	/* depthPacked
+	 *
+	 * I think what this is doing is taking the cell and coloring
+	 * the canvas by depth. This is used for selecting cubes in overview.
+	 * It's using a weird precision trick that
+	 * is compensated for in ThreeDView.readBuffer. I think Mark Richardson
+	 * mentioned that he had problems with precisely selecting cubes. 
+	 *
+	 * William Silversmith, Aug. 2014
+	 */
+	depthPacked: {
+		uniforms: {},
+		vertexShader: [
+			"void main() {",
+				"vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);",
+				"gl_Position = projectionMatrix * mvPosition;",
+			"}"
+		].join("\n"),
+
+		fragmentShader: [
+			"vec4 pack_depth(const in highp float depth) {",
+				"const highp vec4 bit_shift = vec4(256.0, 256.0*256.0, 256.0*256.0*256.0, 256.0*256.0*256.0*256.0);",
+				"vec4 res = depth * bit_shift;",
+				"res.x = min(res.x + 1.0, 255.0);",
+				"return fract(floor(res) / 256.0);",
+			"}",
+
+			"void main() {",
+				"gl_FragData[0] = pack_depth(gl_FragCoord.z);", // Setting color of pixel (aka fragment)
+			"}"
+		].join("\n")
+	},
 	idPacked: {
 		uniforms: {
 			color: { type: "c", value: new THREE.Color( 0xffffff ) },
@@ -16,22 +48,16 @@ Shaders = {
 			specular: { type: "c", value: new THREE.Color( 0x666666 ) },
 			shininess: { type: "f", value: 30 },
 			ambientLightColor: { type: "c", value: new THREE.Color( 0x111111 ) },
-
-			nMin: { type: "v3", value: new THREE.Vector3(0, 0, 0) },
-			nMax: { type: "v3", value: new THREE.Vector3(0, 0, 0) },
 		},
 
 		vertexShader: [
 			"varying vec3 vViewPosition;",
 			"varying vec3 vNormal;",
-			"varying vec4 vPos;",
 			"void main() {",
 				"vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );",
 
 				"vViewPosition = -mvPosition.xyz;",
 				"vNormal = normalMatrix * normal;",
-
-				"vPos = vec4(position, 1.0);",
 
 				"gl_Position = projectionMatrix * mvPosition;",
 			"}"
@@ -51,14 +77,11 @@ Shaders = {
 			"uniform float shininess;",
 
 			"uniform bool clip;",
-			"uniform vec3 nMin;",
-			"uniform vec3 nMax;",
 
 			"uniform vec3 ambientLightColor;",
 
 			"varying vec3 vViewPosition;",
 			"varying vec3 vNormal;",
-			"varying vec4 vPos;",
 
 			"vec3 pack_int( const in int id ) {",
 
@@ -71,10 +94,6 @@ Shaders = {
 			"}",
 
 			"void main() {",
-				"if (any(lessThan(vPos.xyz, nMin)) || any(greaterThan(vPos.xyz, nMax))) {",
-					"discard;",
-				"}",
-
 				"if (mode == 1) {",
 					"gl_FragColor = vec4(pack_int(taskid), 1.0);",
 				"} else if (mode == 2) {",

@@ -1,0 +1,68 @@
+@font-face {
+	font-family: "Munro";
+	src: url("./munro/Munro.ttf");
+}
+
+body {
+	font-family: 'Munro';
+}
+
+button {
+	font-family: 'Munro';
+	font-size: 20px;
+	width: 100px;
+	height: 40px;
+
+	color: white;
+	border: none;
+	background: none;
+
+	outline:none;
+}
+
+#submitTask {
+	position: absolute;
+}
+
+#results {
+	display: none;
+	position: absolute;
+	width: 500px;
+	height: 500px;
+
+	background-color: rgba(0,0,0,.5);
+	color: white;
+	border: 1px solid white;
+
+
+	padding: 50px;
+
+	margin: auto;
+	left: -9999px;
+	right: -9999px;
+	top: -9999px;
+	bottom: -9999px;
+}
+
+#results>div {
+	margin-bottom: 50px;
+}
+
+#message {
+	font-size: 30px;
+}
+
+#accuracy {
+	font-size: 20px;
+}
+
+#accuracyValue {
+	font-size: 28px;
+}
+
+#next {
+	width: 250px;
+	margin: auto;
+	left: 0;
+	right: 0;
+}

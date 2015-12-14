@@ -28,7 +28,7 @@ $.fn.stationaryClick = function (fn) {
 			var newpos = { x: e.clientX, y: e.clientY };
 			var r2 = Math.pow(newpos.x - oldpos.x, 2) + Math.pow(newpos.y - oldpos.y, 2);
 
-			if (r2 > 1) { // r > 1 pixels
+			if (r2 > 0) { // r > 1 pixels
 				fire_mouse_up = false;
 			}
 		})
@@ -38,4 +38,21 @@ $.fn.stationaryClick = function (fn) {
 				fn.apply($(this), arguments);
 			}
 		});
+};
+
+/* ion
+ *
+ * i(dempotent)on. When you do $(selector).on('click', fn)
+ * and you don't recreate the element each time, 
+ * you have to remember to write it as $(selector).off('click').on('click', fn)
+ * to avoid adding the event repeatedly.
+ *
+ * With this function, you only have to wite this: $(selector).ion('click', fn)
+ *
+ * Required: Same as jQuery.on
+ *
+ * Return: this
+ */
+$.fn.ion = function (type, fn) {
+	return $(this).off(type).on(type, fn);
 };

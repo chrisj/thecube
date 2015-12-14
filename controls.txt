@@ -1,0 +1,9 @@
+hover over tile + z				zoom to point on tile
+x								reset to center of cube and zoom
+scroll or w,s					change tile
+space							snap/unsnap to cube face + switch to orthogonal
+
+click							select segment
+click drag						rotate cube
+click + shift and drag			select and drag segments
+ctrl click						remove segment

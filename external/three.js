@@ -21089,7 +21089,7 @@ THREE.WebGLRenderer = function ( parameters ) {
 
 	// Rendering
 
-	this.render = function ( scene, camera, renderTarget, forceClear, swap , opaque) {
+	this.render = function ( scene, camera, renderTarget, forceClear ) {
 
 		if ( camera instanceof THREE.Camera === false ) {
 
@@ -21201,38 +21201,13 @@ THREE.WebGLRenderer = function ( parameters ) {
 			state.setBlending( THREE.NoBlending );
 
 			renderObjects( opaqueObjects, camera, lights, fog, null );
-			if (opaque) {
-				var retoggle = toggleBounds();
-				renderObjectsImmediate( _webglObjectsImmediate, 'opaque', camera, lights, fog, null );
-				retoggle();
-			}
+			renderObjectsImmediate( _webglObjectsImmediate, 'opaque', camera, lights, fog, null );
 
 			// transparent pass (back-to-front order)
 
-			// render part of segments behind the plane (according to camera);
-
-			if (!opaque) {
-				if (swap) {
-					swapImmediates();
-				}
-				// _gl.disable(_gl.CULL_FACE);
-				renderObjectsImmediate( _webglObjectsImmediate, 'transparent', camera, lights, fog, null);
-				// _gl.enable(_gl.CULL_FACE);
-				swapImmediates();
-			}
-
-			
-			// render tile
 			renderObjects( transparentObjects, camera, lights, fog, null );
+			renderObjectsImmediate( _webglObjectsImmediate, 'transparent', camera, lights, fog, null );
 
-			if (!opaque) {
-				// render part of segments in front of the plane
-				renderObjectsImmediate( _webglObjectsImmediate, 'transparent', camera, lights, fog, null);
-
-				if (!swap) {
-					swapImmediates();
-				}
-			}
 		}
 
 		// custom render plugins (post pass)
@@ -21257,46 +21232,6 @@ THREE.WebGLRenderer = function ( parameters ) {
 		// _gl.finish();
 
 	};
-
-
-	var oneVec = new THREE.Vector3(1, 1, 1);
-
-	function toggleBounds() {
-		var prior = null;
-
-		for (var i = 0; i < _webglObjectsImmediate.length; i++) {
-			var curUnis = _webglObjectsImmediate[i].object.material.uniforms;
-			prior = curUnis.nMin.value.z;
-			curUnis.nMin.value.z = 0;
-		}
-
-		return function () {
-			for (var i = 0; i < _webglObjectsImmediate.length; i++) {
-				var curUnis = _webglObjectsImmediate[i].object.material.uniforms;
-				curUnis.nMin.value.z = prior;
-			}
-		}
-	}
-
-	function swapImmediates() {
-		for (var i = 0; i < _webglObjectsImmediate.length; i++) {
-			var curUnis = _webglObjectsImmediate[i].object.material.uniforms;
-			var nMax = curUnis.nMax.value;
-			var nMin = curUnis.nMin.value;
-
-			// console.log('before', curUnis.nMin.value, curUnis.nMax.value);
-
-			if (nMin.z === 0) {
-				curUnis.nMin.value.z = nMax.z;// + 1 / 256;// close to what I want but rotating the cube 180 still causes a gap, need to investigate
-				curUnis.nMax.value = new THREE.Vector3(1, 1, 1);
-			} else {
-				curUnis.nMax.value.z = nMin.z;// - 1 / 256;//
-				curUnis.nMin.value = new THREE.Vector3(0, 0, 0);
-			}
-
-			// console.log('after', curUnis.nMin.value, curUnis.nMax.value);
-		}
-	}
 
 	function projectObject( object ) {
 
@@ -21404,7 +21339,7 @@ THREE.WebGLRenderer = function ( parameters ) {
 
 	}
 
-	function renderObjectsImmediate ( renderList, materialType, camera, lights, fog, overrideMaterial) {
+	function renderObjectsImmediate ( renderList, materialType, camera, lights, fog, overrideMaterial ) {
 
 		var material;
 

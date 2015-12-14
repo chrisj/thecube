@@ -6,12 +6,7 @@
 THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManager) { // EWWWW
 
 	var _this = this;
-	var STATE = { NONE: 1, ROTATE: 2, ANIMATE: 3, OOB: 4};
-	var SNAP_STATE = { NONE: 1, BEGIN: 2, ORTHO: 3, SHIFT: 4 };
-	
-	this.SNAP_STATE = SNAP_STATE;
-
-	this.snapState = SNAP_STATE.NONE;
+	var STATE = { NONE: 1, ROTATE: 2, ANIMATE: 3};
 
 	this.object = object;
 
@@ -29,11 +24,8 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 	var _state = STATE.NONE,
 	// _prevState = STATE.NONE,
 
-	_rotateStart = new THREE.Vector3(),
-	_rotateEnd = new THREE.Vector3(),
-
-	_panStart = new THREE.Vector2(),
-	_panEnd = new THREE.Vector2();
+	_mouseStart = new THREE.Vector2(),
+	_mouseEnd = new THREE.Vector2();
 
 	// events
 
@@ -41,14 +33,6 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 	var startEvent = { type: 'start' };
 	var endEvent = { type: 'end' };
 	var rotateEvent = { type: 'rotate' };
-
-
-	var snapBeginEvent = { type: 'snapBegin' };
-	var snapUpdateEvent = { type: 'snapUpdate' };
-	var snapCompleteEvent = { type: 'snapComplete' };
-
-	var unSnapEvent = { type: 'unSnap' };
-
 
 	// methods
 
@@ -65,74 +49,54 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 		}
 	};
 
-	var getMouseProjectionOnBall = ( function () {
-		var mouseOnBall = new THREE.Vector3();
+	var getMouseOnScreen = ( function () {
+		var vector = new THREE.Vector2();
 
-		return function ( pageX, pageY ) {
-
+		return function getMouseOnScreen(pageX, pageY) {
 			var minDist = Math.min(_this.screen.width, _this.screen.height);
-			var circleRadius = minDist / 2.2;
-
-			mouseOnBall.set(
-				( pageX - _this.screen.width / 2 - _this.screen.left ) / circleRadius,
-				( _this.screen.height / 2 + _this.screen.top - pageY ) / circleRadius,
-				0.0
+			vector.set(
+				((2 * pageX - _this.screen.width) / minDist),
+				((_this.screen.height - 2 * pageY) / minDist)
 			);
 
-			// mouseOnBall.set(
-			// 	( ( 2 * pageX - _this.screen.width) / _this.screen.width ),
-			// 	( ( _this.screen.height - 2 * pageY) / _this.screen.width ), // screen.width intentional
-			// 	1
-			// );
-
-			var length = mouseOnBall.length();
-
-			// if (length > 1.0) {
-				// return null;
-				// mouseOnBall.normalize();
-			// } else {
-				mouseOnBall.z = Math.sqrt( 1.0 - length * length );
-			// }
-
-			return mouseOnBall;
+			return vector;
 
 		};
 
 	}());
 
 	this.rotateObject = (function() {
-		var axis = new THREE.Vector3(),
-			quaternion = new THREE.Quaternion();
+		var angle = 0,
+			quaternion = new THREE.Quaternion(),
+			moveDirection = new THREE.Vector3();
 
 
 		return function () {
-
-			var angle = Math.acos( _rotateStart.dot( _rotateEnd ) / _rotateStart.length() / _rotateEnd.length() );
+			moveDirection.set(-(_mouseEnd.y - _mouseStart.y), _mouseEnd.x - _mouseStart.x, 0);
+			angle = moveDirection.length();
+			
+			var axis = moveDirection.normalize(); // also modifies moveDirection
 
 			if ( angle ) {
-				// console.log('angle', angle);
-				if (_this.snapState === SNAP_STATE.ORTHO) {
-					_this.snapState = SNAP_STATE.SHIFT;
-				}
-
 				_this.dispatchEvent(rotateEvent);
-
-				axis.crossVectors( _rotateStart, _rotateEnd ).normalize();
 
 				angle *= _this.rotateSpeed;
 
-				quaternion.setFromAxisAngle( axis, angle ).normalize(); // maybe normalize is neccesary
+				quaternion.setFromAxisAngle(axis, angle).normalize(); // maybe normalize is neccesary
 
 				var curQuaternion = _this.object.quaternion;
 				curQuaternion.multiplyQuaternions(quaternion, curQuaternion).normalize();
 				_this.object.setRotationFromQuaternion(curQuaternion);
 
 				// TODO, only switch to 'dynamic' on mouseup
-				if (_state === STATE.NONE) {
-					quaternion.setFromAxisAngle( axis, angle * 0.2 ).normalize();
-					_rotateStart.applyQuaternion( quaternion );
+				if (false && _state === STATE.NONE) {
+					console.log('dynamic');
+					// quaternion.setFromAxisAngle( axis, angle * 0.2 ).normalize();
+					// _rotateStart.applyQuaternion( quaternion );
+
+					// _rotateStart += (_rotateEnd - _rotateStart) * 0.2;
 				} else {
-					_rotateStart.copy(_rotateEnd);
+					_mouseStart.copy(_mouseEnd);
 				}
 			}
 		}
@@ -157,220 +121,8 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 		}
 	};
 
-	function animateToTargetQuaternion(duration, cb) {
-		_state = STATE.ANIMATE; // TODO maybe use state = animating
-
-		var startQuat = new THREE.Quaternion().copy(_this.object.quaternion);
-
-		var o = {t: 0};
-
-		var currentSegOpacity = SegmentManager.opacity;
-
-		new TWEEN.Tween(o).to({t: 1}, duration).onUpdate(function () {
-			THREE.Quaternion.slerp(startQuat, _this.targetQuaternion, _this.object.quaternion, o.t);
-
-			var p = 1 - o.t;
-			camera.fov = Math.min(camera.fov, camera.orthoFov * (1 - p) + camera.perspFov * p);
-
-			SegmentManager.opacity = currentSegOpacity * p;
-		    PlaneManager.opacity = o.t * 0.2 + 0.8;
-
-			// _this.dispatchEvent(snapUpdateEvent, o.t);
-		}).onComplete(function () {
-			_this.object.quaternion.copy(_this.targetQuaternion);
-			_this.object.setRotationFromQuaternion(_this.targetQuaternion);
-			_state = STATE.NONE;
-			cb();
-		}).start();
-	}
-
-	this.targetQuaternion = new THREE.Quaternion();
-	var tmpEuler = new THREE.Euler();
-
-	// function furthestFromZero(arr) {
-	// 	var current = null;
-	// 	var second = null;
-
-	// 	for (var i = 1; i < arr.length; i++) {
-	// 		if (current === null || Math.abs(arr[i]) > Math.abs(arr[current])) {
-	// 			current = i;
-	// 		} else (current === null || Math.abs(arr[i]) > Math.abs(arr[current])) {
-
-	// 		}
-	// 	};
-
-	// 	return i;
-	// }
-
-	function snapEuler(euler) {
-		// var largest = 1;
-		// for (var i = 1; i < 3; i++) {
-		// 	if (Math.abs(arr[i]) > Math.abs(arr[current])) {
-		// 		current = i;
-		// 	}
-		// };
-
-		// var t = 0;
-
-		// for (var i = 0; i < 3; i++) {
-		// 	if (i != largest && Math.abs(arr[i])) {
-
-		// 	}
-		// };
-	}
-
-	function printMatrix(m) {
-		return;
-		function p(n) {
-			if (n >= 0) {
-				return ' ' + n.toFixed(2);
-			} else {
-				return n.toFixed(2);
-			}
-		}
-
-		console.log(`
-			${p(m[0])} ${p(m[1])} ${p(m[2])} ${p(m[3])}
-			${p(m[4])} ${p(m[5])} ${p(m[6])} ${p(m[7])}
-			${p(m[8])} ${p(m[9])} ${p(m[10])} ${p(m[11])}
-			${p(m[12])} ${p(m[13])} ${p(m[14])} ${p(m[15])}
-		`);
-	}
-
-	function foo(matrix, ignores) {
-		var largest = null;
-
-		for (var i = 0; i < matrix.length; i++) {
-			if (ignores.indexOf(i) === -1) {
-				largest = i;
-				break;
-			}
-		};
-
-		if (largest === null) {
-			throw "WTF!";
-		}
-
-		for (var i = 0; i < matrix.length; i++) {
-			// if (ignores.indexOf(i) !== -1) {
-			// 	continue;
-			// }
-
-			var y = Math.floor(i / 4);
-			var x = i % 4;
-
-			if (x > 2 || y > 2) {
-				continue;
-			}
-
-			if (Math.abs(matrix[i]) > Math.abs(matrix[largest])) {
-				largest = i;
-			}
-		};
-
-		// printMatrix(matrix);
-		console.log('largest', largest, matrix[largest]);
-
-		var ly = Math.floor(largest / 4);
-		var lx = largest % 4;
-
-		for (var i = 0; i < matrix.length; i++) {
-			var y = Math.floor(i / 4);
-			var x = i % 4;
-
-			if (x === lx || y === ly) {
-				matrix[i] = 0;
-			}
-		}
-
-		return largest;
-	}
-
-	function snapMatrix(matrix) {
-		var nMatrix = matrix.clone();
-		var one = foo(nMatrix.elements, []);
-		var two = foo(nMatrix.elements, [one]);
-		var three = foo(nMatrix.elements, [one, two]);
-
-		function snap(v) {
-			if (v < 0) {
-				return -1;
-			} else {
-				return 1;
-			}
-		}
-
-		nMatrix.elements[one] = snap(matrix.elements[one]);
-		nMatrix.elements[two] = snap(matrix.elements[two]);
-		nMatrix.elements[three] = snap(matrix.elements[three]);
-
-		return nMatrix;
-	}
-
-	function snapAxis(val) {
-		var HALF_PI = Math.PI / 2;
-		return Math.round(val / HALF_PI) * HALF_PI;
-	}
-
-	this.snap = function () {
-		console.log('snap!', _this.snapState);
-
-		// TODO, should we be doing this? (maybe so animate can take over rotation, especially if cube has momentum)
-		// _state = STATE.NONE;
-		// _prevState = STATE.NONE;
-
-		if (_this.snapState === SNAP_STATE.NONE) {
-			var nMatrix = snapMatrix(_this.object.matrix);
-			printMatrix(_this.object.matrix.elements);
-			printMatrix(nMatrix.elements);
-			_this.targetQuaternion.setFromRotationMatrix(nMatrix);
-		}
-
-		_this.snapState = SNAP_STATE.BEGIN;
-		_this.dispatchEvent( snapBeginEvent );
-
-		_rotateStart.copy( _rotateEnd );
-
-		animateToTargetQuaternion(250, function () {
-			_this.snapState = SNAP_STATE.ORTHO;
-			_this.dispatchEvent( changeEvent ); // TODO have to dispatch change before snapcomplete so that the camera is put in final place, this means we dispatch twice
-			_this.dispatchEvent( snapCompleteEvent );
-		});
-	};
-
-	this.unSnap = function () {
-		console.log('unSnap');
-		_this.snapState = SNAP_STATE.NONE;
-		_this.dispatchEvent(unSnapEvent);
-	}
-
-	// listeners
-	function keydown( event ) {
-		// _prevState = _state;
-
-		// if ( _state !== STATE.NONE ) {
-			// return;
-		// } else 
-		if ( event.keyCode === 32 ) { // TODO, I want to snap/unsnap even when rotating
-			console.log('snapState spacebar', _this.snapState);
-			if (_this.snapState === SNAP_STATE.NONE) {
-				_this.snap();
-			} else {
-				_this.unSnap();
-			}
-		}
-	}
-
-	function keyup( event ) {
-
-		// _state = _prevState;
-
-		// window.addEventListener( 'keydown', keydown, false );
-
-	}
-
 	function mousedown( event ) {
-		event.preventDefault();
+		// event.preventDefault();
 		event.stopPropagation();
 
 		if ( _state === STATE.NONE ) {
@@ -381,16 +133,10 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 		}
 
 		if ( _state === STATE.ROTATE) {
-			var ballPosition = getMouseProjectionOnBall( event.pageX, event.pageY );
+			var mousePosition = getMouseOnScreen(event.pageX, event.pageY);
 
-			if (ballPosition) {
-				_rotateStart.copy(ballPosition);
-				_rotateEnd.copy( _rotateStart );
-			}
-
-			// _rotateStart.copy( getMouseProjectionOnBall( event.pageX, event.pageY ) );
-			_rotateEnd.copy( _rotateStart );
-
+			_mouseStart.copy(mousePosition);
+			_mouseEnd.copy(mousePosition );
 		}
 
 		document.addEventListener( 'mousemove', mousemove, false );
@@ -409,17 +155,10 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 
 		lastEvent = event;
 
-		if ( _state === STATE.ROTATE || _state === STATE.OOB) {
-			var ballPosition = getMouseProjectionOnBall( event.pageX, event.pageY );
-
-			if (ballPosition) {
-				_state === STATE.ROTATE;
-				_rotateEnd.copy(ballPosition);
-			} else {
-				if (_state === STATE.ROTATE) {
-					_state === STATE.OOB;
-				}
-			}
+		if ( _state === STATE.ROTATE) {
+			var ballPosition = getMouseOnScreen(event.pageX, event.pageY);
+			_state === STATE.ROTATE;
+			_mouseEnd.copy(ballPosition);
 		}
 
 	}
@@ -430,32 +169,29 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 		event.preventDefault();
 		event.stopPropagation();
 
-		if (_state === STATE.ROTATE && _rotateEnd.equals(_rotateStart)) {
-			console.log('do the magic');
-			// too hackish, this fixes the previous problem:
-			// if update happens between mousemove and mouse up, the last mousemove event is performed in rotateObject
-			// and the cube will do a hard stop
-			_rotateEnd.copy (getMouseProjectionOnBall(lastEvent.pageX + lastEvent.movementX, lastEvent.pageY + lastEvent.movementY));
-		}
+		console.log('no longer rotating!');
+
+		// if (_state === STATE.ROTATE && _rotateEnd.equals(_rotateStart)) {
+		// 	console.log('do the magic');
+		// 	// too hackish, this fixes the previous problem:
+		// 	// if update happens between mousemove and mouse up, the last mousemove event is performed in rotateObject
+		// 	// and the cube will do a hard stop
+		// 	_rotateEnd.copy (getMouseOnCircle(lastEvent.pageX + lastEvent.movementX, lastEvent.pageY + lastEvent.movementY));
+		// }
 
 		_state = STATE.NONE;
 
 		document.removeEventListener( 'mousemove', mousemove );
 		document.removeEventListener( 'mouseup', mouseup );
 		_this.dispatchEvent( endEvent );
-
-		if (_this.snapState === SNAP_STATE.SHIFT) {
-			_this.snap();
-		}
-
 	}
 
 	document.addEventListener( 'contextmenu', function ( event ) { event.preventDefault(); }, false );
 
 	document.addEventListener( 'mousedown', mousedown, false );
 
-	window.addEventListener( 'keydown', keydown, false );
-	window.addEventListener( 'keyup', keyup, false );
+	// window.addEventListener( 'keydown', keydown, false );
+	// window.addEventListener( 'keyup', keyup, false );
 
 	this.handleResize();
 

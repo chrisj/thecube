@@ -39,11 +39,18 @@ THREE.Segment = function (interleavedData, lengths, material) {
 
     // _gl.enableVertexAttribArray(index);
     _gl.enableVertexAttribArray(program.attributes.position);
-    _gl.enableVertexAttribArray(program.attributes.normal);
+
+    if (program.attributes.normal !== -1) { // TODO, doing this because of the depth buffer, seems like it isn't a problem with omniweb
+      _gl.enableVertexAttribArray(program.attributes.normal);
+      _gl.vertexAttribPointer(program.attributes.normal, 3, _gl.FLOAT, false, 24, 12);
+    }
 
     // _gl.vertexAttribPointer(index, size, type, normalized, stride, pointer)
     _gl.vertexAttribPointer(program.attributes.position, 3, _gl.FLOAT, false, 24, 0);
-    _gl.vertexAttribPointer(program.attributes.normal, 3, _gl.FLOAT, false, 24, 12);
+
+    // if (program.attributes.normal !== -1) {
+      
+    // }
 
     // _gl.drawArrays(mode, start, count)
     // 6 = dimensions per vertex: 3 for position, 3 for normal vector
@@ -87,6 +94,9 @@ ThreeDView.setSize = function (width, height) {
 };
 
 
+var _depthMaterial = new THREE.ShaderMaterial(Shaders.depthPacked);
+_depthMaterial.blending = 0;
+
 /* readBuffer
  *
  * Reads information about 3D objects on screen by using
@@ -106,24 +116,25 @@ ThreeDView.setSize = function (width, height) {
  *
  * Return: computed value (int)
  */
-ThreeDView.readBuffer = function (x, y, size, _renderer, _scene, _camera, _segments) {
-
-
+ThreeDView.readBuffer = function (x, y, size, _renderer, _scene, _camera, _segments, type) {
   _renderTarget = ThreeDView._renderTarget;
 
+  if (type === 'depth') {
+    _scene.overrideMaterial = _depthMaterial;
+  } else if (type === 'segid') {
+    _segments.traverse(setMode(2));
+  } else {
+    console.log('unsupported read buffer type', type);
+    return;
+  }
+
   ///////
-  
-  _segments.traverse(setMode(2));
 
   var ctx = _renderer.getContext();
   ctx.disable(ctx.BLEND);
 
-  // showCube(false);
-
   _renderer.render(_scene, _camera, _renderTarget, true);
   
-  // showCube(true);
-
   x = x / ctx.drawingBufferWidth;
   y = (ctx.drawingBufferHeight - 1 - y) / ctx.drawingBufferHeight;
 
@@ -135,15 +146,25 @@ ThreeDView.readBuffer = function (x, y, size, _renderer, _scene, _camera, _segme
 
   var vals, i;
 
+  if (type === 'depth') {
+    vals = new Float32Array(size * size);
+    for (i = 0; i < size * size; i += 1) {
+      vals[i] = valsBroken[i * 4] / 256.0 +
+        valsBroken[i * 4 + 1] / (256.0 * 256.0) +
+        valsBroken[i * 4 + 2] / (256.0 * 256.0 * 256.0);
+    }
+    
+    _scene.overrideMaterial = null;
+  } else if (type === 'segid') {
+    vals = new Uint32Array(size * size);
+    for (i = 0; i < size * size; i += 1) {
+      vals[i] = valsBroken[i * 4] * 256.0 * 256.0 + 
+        valsBroken[i * 4 + 1] * 256.0 +
+        valsBroken[i * 4 + 2];
+    }
 
-  vals = new Uint32Array(size * size);
-  for (i = 0; i < size * size; i += 1) {
-    vals[i] = valsBroken[i * 4] * 256.0 * 256.0 + 
-      valsBroken[i * 4 + 1] * 256.0 +
-      valsBroken[i * 4 + 2];
+    _segments.traverse(setMode(0));
   }
-
-  _segments.traverse(setMode(0));
 
   ctx.enable(ctx.BLEND);
   
