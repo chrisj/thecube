@@ -33,10 +33,12 @@ var CHUNKS = [
 ];
 
 // loads all task data and calls done handler when both are complete
-function playTask(task) {
+function playTask(task, cb) {
   assignedTask = task;
-  // TODO, setup managers for this task
 
+  resetZoom();
+
+  // TODO, setup managers for this task
   var loadSeedMeshes = SegmentManager.loadForTask(task); // TODO, this is ugly
 
   function loadTaskData(done) {
@@ -46,9 +48,7 @@ function playTask(task) {
     ], done);
   }
 
-  loadTaskData(function () {
-    console.log('we are done loading!');
-  });
+  loadTaskData(cb);
 
   // enable the submit task button
   $('#submitTask').click(function () {
@@ -64,14 +64,26 @@ function playTask(task) {
   });
 }
 
+$('#assignTask').click(function () {
+  assign($('#taskIdInput').val(), function () {
+    $('#results').hide();
+  });
+});
 
 // kick off the game
-function start() {
+function assign(taskId, done) {
   //1029032
-  //1043593 no segments to add 
-  $.post('https://tasking.eyewire.org/1.0/tasks/332/testassign').done(playTask);
+  //1043593 no segments to add
+  var url = 'https://tasking.eyewire.org/1.0/tasks/testassign';
+  if (taskId) {
+    url = 'https://tasking.eyewire.org/1.0/tasks/' + taskId + '/testassign';
+  }
+
+  $.post(url, function (task) {
+      playTask(task, done);
+  });
 }
-start();
+assign(332);
 
 ///////////////////////////////////////////////////////////////////////////////
 /// utils
@@ -195,23 +207,56 @@ var SegmentManager = {
     });
   },
 
+  loadForTask: function (task) {
+    this.selected = [];
+    this.selectedColors = [];
+    this.seeds = task.seeds;
+    this.seedColors = task.seeds.map(segIdToRGB);
+    this.meshes = {};
+    this.hover = undefined;
+
+    segments.remove.apply(segments, segments.children);
+
+    var _this = this;
+
+    function loadSeedMeshes(done) {
+      var seedsLoaded = 0;
+      _this.seeds.forEach(function (segId) {
+        displayMeshForVolumeAndSegId(task.segmentation_id, segId, function () {
+          seedsLoaded++;
+          if (seedsLoaded === _this.seeds.length) {
+            done();
+          }
+        });
+      });
+    }
+
+    return loadSeedMeshes;
+  },
+
   isSeed: function (segId) {
     return this.seeds.indexOf(segId) !== -1;
   },
   isSelected: function (segId) {
     return this.selected.indexOf(segId) !== -1;
   },
-  hoverSegId: function (segId) {
+  hoverSegId: function (segId, startingTile) {
     if (segId === this.hover) {
       return;
     }
-    console.log(segId);
+    console.log('hover', segId);
     this.hover = segId;
 
-    drawVoxelSegment(TileManager.getPlane(), segId);
+    // clear current voxels
+    hoverContainer.remove.apply(hoverContainer, hoverContainer.children);
+
+    if (segId !== null) {
+      drawVoxelSegment(TileManager.getPlane(), segId, startingTile);
+    }
+
     needsRender = true;
   },
-  selectSegId: function (segId) {
+  selectSegId: function (segId, cb) {
     if (segId === 0 || this.isSelected(segId) || this.isSeed(segId)) {
       return;
     }
@@ -229,6 +274,10 @@ var SegmentManager = {
       var indvTweenOut = new TWEEN.Tween(SegmentProxy(segId)).to({ opacity: SegmentManager.opacity }, duration).onUpdate(function () {
         needsRender = true;
       }).start();
+
+      if (cb) {
+        cb();
+      }
     });
   },
 
@@ -257,6 +306,11 @@ var SegmentManager = {
 
     var segMesh = this.meshes[segId];
 
+    // temporary
+    segments.remove(segMesh);
+    needsRender = true;
+    return;
+
     var showSeg = new TWEEN.Tween(SegmentProxy(segId)).to({ opacity: 1.0 }, duration / 2)
     .onUpdate(function () {
         needsRender = true;
@@ -277,29 +331,6 @@ var SegmentManager = {
       segments.remove(segMesh);
       segMesh.position.set(0, 0, 0);
     }).start();
-  },
-  loadForTask: function (task) {
-    this.selected = [];
-    this.selectedColors = [];
-    this.seeds = task.seeds;
-    this.seedColors = task.seeds.map(segIdToRGB);
-    this.meshes = {};
-
-    var _this = this;
-
-    function loadSeedMeshes(done) {
-      var seedsLoaded = 0;
-      _this.seeds.forEach(function (segId) {
-        displayMeshForVolumeAndSegId(task.segmentation_id, segId, function () {
-          seedsLoaded++;
-          if (seedsLoaded === _this.seeds.length) {
-            done();
-          }
-        });
-      });
-    }
-
-    return loadSeedMeshes;
   },
   displayMesh: function (segId) {
     segments.add(this.meshes[segId]);
@@ -546,7 +577,7 @@ var voxelMat = new THREE.MeshLambertMaterial( {color: 0x00ff00} );
 
 var hoverPool = [];
 
-for (var i = 0; i < 150000; i++) {
+for (var i = 0; i < 50000; i++) {
   hoverPool.push(new THREE.Mesh(voxelGeometry, voxelMat));
 };
 
@@ -563,18 +594,11 @@ function incrNeighbor(thing, b) {
   }
 }
 
-function drawVoxelSegment(plane, segId) {
+function drawVoxelSegment(plane, segId, startingTile) {
 
   var tiles = plane.tiles;
-  var startingTile = plane.currentTileIdx;
 
   var segmentRGB = segIdToRGB(segId);
-
-  // clear current voxels
-  var hoverVoxels = hoverContainer.children;
-  for (var i = hoverVoxels.length - 1; i >= 0; i--) {
-    hoverContainer.remove(hoverVoxels[i]);
-  };
 
   var thing = {};
 
@@ -779,7 +803,6 @@ var camera = (function (perspFov, viewHeight) {
     set viewHeight(vH) {
       this._viewHeight = vH;
       this._fakeViewHeight = simpleViewHeight(perspFov, vH);
-      console.log('viewHeight', vH);
       this.fov = this.fov; // hahaha
     },
     get viewHeight() {
@@ -839,7 +862,7 @@ controls.rotateSpeed = 4.0;
 
 // for debug
 var checkPointsContainer = new THREE.Object3D();
-cubeContents.add(checkPointsContainer);
+// cubeContents.add(checkPointsContainer);
 
 var checkVoxelGeometry = new THREE.BoxGeometry( 1/256, 1/256, 1/256 );
 var checkVoxelMat = new THREE.MeshLambertMaterial( {color: 0xffff00} );
@@ -853,7 +876,7 @@ lineGeo.vertices.push(new THREE.Vector3(0, 0, 0));
 lineGeo.vertices.push(new THREE.Vector3(0, 0, -1));
 
 var line = new THREE.Line(lineGeo, lineMat);
-cubeContents.add(line);
+// cubeContents.add(line);
 
 var test = new THREE.Mesh( new THREE.BoxGeometry( 0.1, 0.1, 0.1 ), new THREE.MeshNormalMaterial({
     transparent: false,
@@ -1172,23 +1195,33 @@ function mousemove (event) {
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
 
+  if (key('shift', HELD)) {
+    selectNeighboringSegment(true);
+  }
 
   // if (!mouseStart) {
   //   checkForTileClick(event);
   // } else {}
 }
 
-// $(document).stationaryClick(function (event) {
-//   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-//   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-//   checkForTileClick(event, false);
-// });
+$(document).stationaryClick(function (event) {
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  // checkForTileClick(event, false);
+
+  if (!key('ctrl', HELD)) {
+    selectNeighboringSegment();
+  }
+});
 
 function screenToWorld(mouse) {
   var cX = (mouse.x + 1) / 2 * window.innerWidth; // TODO, this will get screwed up with a resize event
   var cY = (mouse.y - 1) / 2 * window.innerHeight * -1;
 
+  hoverContainer.visible = false;
   var depths = ThreeDView.readBuffer(cX, cY, 1, renderer, scene, camera.realCamera, segments, 'depth');
+  hoverContainer.visible = true;
+
   var zDepth = depths[0];
 
   if (zDepth > 0) {
@@ -1218,7 +1251,7 @@ function screenToCube(mouse) {
   }
 }
 
-function selectNeighboringSegment() {
+function selectNeighboringSegment(mock) {
   var pt1 = screenToCube(mouse);
 
   if (pt1) {
@@ -1260,13 +1293,23 @@ function selectNeighboringSegment() {
       var isSeed = SegmentManager.isSeed(segId);
 
       if (segId !== 0 && !SegmentManager.isSelected(segId) && !SegmentManager.isSeed(segId)) {
-        console.log('found segment', segId);
-        SegmentManager.selectSegId(segId);
+        // console.log('found segment', segId);
+
+        if (mock) {
+          SegmentManager.hoverSegId(segId, z);
+        } else {
+          SegmentManager.hoverSegId(segId, z);
+          SegmentManager.selectSegId(segId, function () {
+            SegmentManager.hoverSegId(null);
+          });
+        }
         return;
       } else {
-        console.log('ignoring', segId, isSeed, isSelected);
+        // console.log('ignoring', segId, isSeed, isSelected);
       }
     };
+
+    console.log('could not find a neighbor');
   }
 }
 
@@ -1408,9 +1451,13 @@ function animateToPositionAndZoom(point, zoomLevel, reset) {
     }).start();
 }
 
+function resetZoom() {
+  animateToPositionAndZoom(new THREE.Vector3(0, 0, 0), 1, true);
+}
+
 function handleInput() {
   if (key('x', PRESSED)) {
-    animateToPositionAndZoom(new THREE.Vector3(0, 0, 0), 1, true);
+    resetZoom();
   }
 
   if (key('a', PRESSED)) {
@@ -1443,6 +1490,14 @@ function handleInput() {
 
   if (key('g', PRESSED)) {
     selectNeighboringSegment();
+  }
+
+  if (key('shift', PRESSED)) {
+    selectNeighboringSegment(true);
+  }
+
+  if (key('shift', RELEASED)) {
+    SegmentManager.hoverSegId(null, 0);
   }
 
   if (key('z', PRESSED)) {

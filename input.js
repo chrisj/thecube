@@ -48,8 +48,6 @@ function pollInput() {
 function handleKeyDown(e) {
     if(!e){ var e = window.event; }
 
-    console.log('e', e);
-
     switch(e.keyCode) {
         case 37: case 39: case 38:  case 40: // Arrow keys
         case 32: e.preventDefault(); break; // Space
@@ -81,6 +79,8 @@ function key(key_name, state) {
         return pressed_keys.contains(key_name);
     } else if (state === HELD) {
         return held_keys.contains(key_name);
+    } else if (state === RELEASED) {
+        return released_keys.contains(key_name);
     }
     return false;
 }
