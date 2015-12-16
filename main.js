@@ -1507,6 +1507,14 @@ function handleInput() {
   // if (key('x', PRESSED)) {
   //   resetZoom();
   // }
+  
+  if (key('ctrl', PRESSED)) {
+    pSystem.visible = false;
+  }
+  
+  if (key('ctrl', RELEASED)) {
+    pSystem.visible = true;
+  }
 
   if (key('a', PRESSED)) {
     SegmentManager.opacity = 0;
