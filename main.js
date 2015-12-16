@@ -752,9 +752,6 @@ var scene = new THREE.Scene();
 var webGLContainer = document.getElementById('webGLContainer');//$('#webGLContainer');
 webGLContainer.appendChild(renderer.domElement);
 
-webGLContainer.requestFullscreen = webGLContainer.requestFullscreen || webGLContainer.webkitRequestFullScreen;
-webGLContainer.requestFullscreen();
-
 // THREEJS objects
 
 var camera = (function (perspFov, viewHeight) {
