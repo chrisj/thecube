@@ -1209,8 +1209,8 @@ function mouseup (event) {
       }
   } else if (key('ctrl', HELD)) {
     // return;
-    console.log('checking for segment');
-    // checkForSegmentClick(event.clientX, event.clientY);
+    console.log('checking for segment to remove');
+    checkForSegmentClick(event.clientX, event.clientY);
   }
 }
 
