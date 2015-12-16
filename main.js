@@ -1393,14 +1393,18 @@ function checkForSegmentClick(x, y) {
   wireframe.visible = false;
   var cPlane = TileManager.getPlane();
   cPlane.plane.visible = false;
+  pSystem.visible = false;
   var ids = ThreeDView.readBuffer(x, y, 1, renderer, scene, camera.realCamera, segments, 'segid');
+  pSystem.visible = true;
+  cPlane.plane.visible = true;
+  wireframe.visible = true;
+  
   for (var i = 0; i < ids.length; i++) {
     var segId = ids[i];
     SegmentManager.deselectSegId(segId);
   };
 
-  cPlane.plane.visible = true;
-  wireframe.visible = true;
+  
 }
 
 
