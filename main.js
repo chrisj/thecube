@@ -1510,10 +1510,12 @@ function handleInput() {
   
   if (key('ctrl', PRESSED)) {
     pSystem.visible = false;
+    needsRender = true;
   }
   
   if (key('ctrl', RELEASED)) {
     pSystem.visible = true;
+    needsRender = true;
   }
 
   if (key('a', PRESSED)) {
