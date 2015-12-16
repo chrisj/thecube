@@ -83,7 +83,9 @@ function assign(taskId, done) {
       playTask(task, done);
   });
 }
-assign(332);
+assign(332, function () {
+  console.log('loaded first cube');
+});
 
 ///////////////////////////////////////////////////////////////////////////////
 /// utils
@@ -248,11 +250,19 @@ var SegmentManager = {
     this.hover = segId;
 
     // clear current voxels
-    hoverContainer.remove.apply(hoverContainer, hoverContainer.children);
+    // hoverContainer.remove.apply(hoverContainer, hoverContainer.children);
+
+    if (this.lastHoverCount) {
+      for (var i = 0; i < this.lastHoverCount; i++) {
+        particleGeo.vertices[i].set(-1000, -1000, -1000);
+      };
+    }
 
     if (segId !== null) {
-      drawVoxelSegment(TileManager.getPlane(), segId, startingTile);
+      this.lastHoverCount = drawVoxelSegment(TileManager.getPlane(), segId, startingTile);
     }
+
+    particleGeo.verticesNeedUpdate = true;
 
     needsRender = true;
   },
@@ -569,31 +579,6 @@ function highlight() {
   // return copy;
 }
 
-
-var skip = 2;
-
-var voxelGeometry = new THREE.BoxGeometry( skip/256, skip/256, skip/256 );
-var voxelMat = new THREE.MeshLambertMaterial( {color: 0x00ff00} );
-
-var hoverPool = [];
-
-for (var i = 0; i < 50000; i++) {
-  hoverPool.push(new THREE.Mesh(voxelGeometry, voxelMat));
-};
-
-function incrNeighbor(thing, b) {
-  thing.count++;
-  // console.log('count', thing.count);
-  if (thing.count === 6) {
-    // console.log('hide neighbor');
-    thing.visible = false;
-  }
-
-  if (thing.count > 6) {
-    console.log('wtf', thing.count, b)
-  }
-}
-
 function drawVoxelSegment(plane, segId, startingTile) {
 
   var tiles = plane.tiles;
@@ -602,8 +587,12 @@ function drawVoxelSegment(plane, segId, startingTile) {
 
   var thing = {};
 
+  var byteBuffer = new ArrayBuffer(256 * 256 * 256);
+  var counts = new Int8Array(byteBuffer);
 
   var voxelCount = 0;
+
+  var voxels = [];
 
   function getColor(buffer, startIndex) {
     return [buffer[startIndex], buffer[startIndex+1], buffer[startIndex+2]];
@@ -617,80 +606,79 @@ function drawVoxelSegment(plane, segId, startingTile) {
 
     var tileCount = 0;
 
+    // var positionToParticle = {};
+
     // add voxels
     tiles[tile].drawSegmentation();
     var segPixels = segContext.getImageData(0, 0, CUBE_SIZE, CUBE_SIZE).data;
 
-    for (var j = 0; j < segPixels.length; j += 4 * skip) {
+    for (var j = 0; j < segPixels.length; j += 4) {
       var rgb = getColor(segPixels, j);
       if (rgbEqual(segmentRGB, rgb)) {
-
-        if (voxelCount < hoverPool.length) {
-          var newVoxel = hoverPool[voxelCount];
-
           var pixelIdx = j / 4;
 
           var x = pixelIdx % CUBE_SIZE;
           var y = Math.floor(pixelIdx / CUBE_SIZE);
+          var z = tile;
 
-          newVoxel.position.set(x / CUBE_SIZE, y / CUBE_SIZE, tile / 256);
 
-          thing[[x,y,tile]] = newVoxel;
+          var selfCount = 0;
+          var neighbor = counts[x-1 + y * 256 + z * 256 * 256] <<= 1;
+          selfCount += neighbor >>> 31;
 
-          newVoxel.count = 0;
-          newVoxel.visible = true;
+          neighbor = counts[x + (y-1) * 256 + z * 256 * 256] <<= 1;
+          selfCount += neighbor >>> 31;
 
-          var xNeighbor = thing[[x-skip, y, tile]];
-          if (xNeighbor) {
-            newVoxel.count++;
-            incrNeighbor(xNeighbor);
-          }
+          neighbor = counts[x + y * 256 + (z-direction) * 256 * 256] <<= 1;
+          selfCount += neighbor >>> 31;
 
-          var yNeighbor = thing[[x, y-skip, tile]];
-          if (yNeighbor) {
-            newVoxel.count++;
-            incrNeighbor(yNeighbor);
-          }
+          counts[x + y * 256 + z * 256 * 256] = -1 << selfCount;
 
-          if (direction !== 0) {
-            var zNeighbor = thing[[x, y, tile - (direction * skip)]]
-            if (zNeighbor) {
-              newVoxel.count++;
-              incrNeighbor(zNeighbor, 'z');
-            }
-          }
+          voxels.push([x,y,z]);
 
-          hoverContainer.add(newVoxel);
-
-          voxelCount++;
           tileCount++;
-        } else {
-          return;
-        }
-      }
-
-      if (Math.floor(j / (CUBE_SIZE * 4)) !== Math.floor((j + 4 * skip) / (CUBE_SIZE * 4))) {
-        j += (skip - 1) * (CUBE_SIZE * 4);
       }
     }
 
-
-
-    // recurse
-    // console.log('draw', tileCount, 'tiles at tile', tile);
-
     if (tileCount > 0) {
       if (direction === 0) {
-        recurse(tile - skip, -1);
-        recurse(tile + skip, 1);
+        recurse(tile - 1, -1);
+        recurse(tile + 1, 1);
       } else {
-        recurse(tile + direction * skip, direction);
+        recurse(tile + direction, direction);
       }
     }
   }
 
 
   recurse(startingTile, 0);
+
+
+  var offsetMul = 1 / (CUBE_SIZE * 4);
+
+  var voxelCount = 0;
+
+  for (var voxel of voxels) {
+    var x = voxel[0];
+    var y = voxel[1];
+    var z = voxel[2];
+    if (counts[x + y * 256 + z * 256 * 256] < -63) {
+      continue;
+    }
+
+    if (voxelCount > maxVoxelCount - 1) {
+      break;
+    }
+
+    particleGeo.vertices[voxelCount].set(
+      x / CUBE_SIZE + (Math.random() - 0.5) * offsetMul,
+      y / CUBE_SIZE + (Math.random() - 0.5) * offsetMul,
+      z / CUBE_SIZE + (Math.random() - 0.5) * offsetMul
+    );
+    voxelCount++;
+  }
+
+  return voxelCount;
 }
 
 // returns the the segment id located at the given x y position of this tile
@@ -851,8 +839,41 @@ var segments = new THREE.Object3D();
 segments.name = 'is segacious a word?';
 cubeContents.add(segments);
 
-var hoverContainer = new THREE.Object3D();
-cubeContents.add(hoverContainer);
+// var hoverContainer = new THREE.Object3D();
+// cubeContents.add(hoverContainer);
+
+// particle system
+
+var particleGeo = new THREE.Geometry();
+
+var maxVoxelCount = 100000;
+
+for (var i = 0; i < 100000; i++) {
+  particleGeo.vertices.push(new THREE.Vector3(0.5, 0.5, 0.5));
+}
+
+var pMaterial = new THREE.ParticleBasicMaterial({
+      color: 0xFFFF00,
+      size: 0.005,
+      transparent: true,
+      opacity: 0.5,
+      sizeAttenuation: true
+});
+
+// var pMaterial = new THREE.MeshPhongMaterial({ color: 0x00ff00, transparent: true });
+
+var pSystem = new THREE.ParticleSystem(particleGeo, pMaterial);
+
+pSystem.frustumCulled = false;
+
+cubeContents.add(pSystem);
+
+
+
+
+// end of particle system
+
+
 
 var controls = new THREE.RotateCubeControls(pivot, camera, SegmentManager, PlaneManager);
 controls.rotateSpeed = 4.0;
@@ -1182,12 +1203,17 @@ function mouseup (event) {
   // }
 
   if (key('shift', HELD)) {
-    // checkForTileClick(event);
-    console.log('do I need this?');
+      var point = screenToCube(mouse);
+
+      if (point) {
+        console.log(point);
+        animateToPositionAndZoom(point, 4);
+        TileManager.movePlanes(point);
+      }
   } else if (key('ctrl', HELD)) {
     // return;
     console.log('checking for segment');
-    checkForSegmentClick(event.clientX, event.clientY);
+    // checkForSegmentClick(event.clientX, event.clientY);
   }
 }
 
@@ -1196,7 +1222,7 @@ function mousemove (event) {
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
 
-  if (key('shift', HELD)) {
+  if (!mouseStart) {
     selectNeighboringSegment(true);
   }
 
@@ -1210,7 +1236,7 @@ $(document).stationaryClick(function (event) {
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
   // checkForTileClick(event, false);
 
-  if (!key('ctrl', HELD)) {
+  if (!key('ctrl', HELD) && !key('shift', HELD)) {
     selectNeighboringSegment();
   }
 });
@@ -1219,9 +1245,9 @@ function screenToWorld(mouse) {
   var cX = (mouse.x + 1) / 2 * window.innerWidth; // TODO, this will get screwed up with a resize event
   var cY = (mouse.y - 1) / 2 * window.innerHeight * -1;
 
-  hoverContainer.visible = false;
+  pSystem.visible = false;
   var depths = ThreeDView.readBuffer(cX, cY, 1, renderer, scene, camera.realCamera, segments, 'depth');
-  hoverContainer.visible = true;
+  pSystem.visible = true;
 
   var zDepth = depths[0];
 
@@ -1252,66 +1278,76 @@ function screenToCube(mouse) {
   }
 }
 
+function between(val, min, max) {
+  return val >= min && val <= max;
+}
+
+function inCube(x, y, z) {
+  return between(x, 0, CUBE_SIZE - 1) &&
+    between(y, 0, CUBE_SIZE - 1) &&
+    between(z, 0, CUBE_SIZE - 1);
+}
+
 function selectNeighboringSegment(mock) {
   var pt1 = screenToCube(mouse);
 
-  if (pt1) {
-    var pt2 = worldToCube(camera.realCamera.position.clone());
-
-    pt1.sub(cubeContents.position);
-    pt2.sub(cubeContents.position);
-
-    var delta = new THREE.Vector3().subVectors(pt2, pt1);
-    delta.normalize();
-
-    var checkVoxels = checkPointsContainer.children;
-    for (var i = checkVoxels.length - 1; i >= 0; i--) {
-      checkPointsContainer.remove(checkVoxels[i]);
-    };
-
-    lineGeo.vertices[0].set(pt1.x, pt1.y, pt1.z);
-    lineGeo.vertices[1].set(pt2.x, pt2.y, pt2.z);
-    lineGeo.verticesNeedUpdate = true;
-    needsRender = true;
-
-    for (var i = 0; i < 5; i++) {
-      // todo, do I want to round or floor? I think floor makes more sense for pixel
-      var x = Math.floor((pt1.x + delta.x * 1/256 * i) * 256);
-      var y = Math.floor((pt1.y + delta.y * 1/256 * i) * 256);
-      var z = Math.floor((pt1.z + delta.z * 1/256 * i) * 256);
-
-
-      var checkPoint = new THREE.Mesh(checkVoxelGeometry, checkVoxelMat);
-      checkPoint.position.set((x + 0.5) / 256, (y + 0.5) / 256, (z + 0.5) / 256);
-      checkPointsContainer.add(checkPoint);
-
-      // console.log('check', x,y,z);
-
-      var tile = TileManager.planes[0].tiles[z];
-      var segId = tile.segIdForPosition(x, y);
-
-      var isSelected = SegmentManager.isSelected(segId);
-      var isSeed = SegmentManager.isSeed(segId);
-
-      if (segId !== 0 && !SegmentManager.isSelected(segId) && !SegmentManager.isSeed(segId)) {
-        // console.log('found segment', segId);
-
-        if (mock) {
-          SegmentManager.hoverSegId(segId, z);
-        } else {
-          SegmentManager.hoverSegId(segId, z);
-          SegmentManager.selectSegId(segId, function () {
-            SegmentManager.hoverSegId(null);
-          });
-        }
-        return;
-      } else {
-        // console.log('ignoring', segId, isSeed, isSelected);
-      }
-    };
-
-    console.log('could not find a neighbor');
+  if (!pt1) {
+    return;
   }
+
+  var start = Date.now();
+
+  var pt2 = worldToCube(camera.realCamera.position.clone());
+
+  pt1.sub(cubeContents.position);
+  pt2.sub(cubeContents.position);
+
+  var delta = new THREE.Vector3().subVectors(pt2, pt1);
+  delta.normalize();
+
+  var checkVoxels = checkPointsContainer.children;
+  for (var i = checkVoxels.length - 1; i >= 0; i--) {
+    checkPointsContainer.remove(checkVoxels[i]);
+  };
+
+  lineGeo.vertices[0].set(pt1.x, pt1.y, pt1.z);
+  lineGeo.vertices[1].set(pt2.x, pt2.y, pt2.z);
+  lineGeo.verticesNeedUpdate = true;
+  needsRender = true;
+
+  for (var i = 0; i < 10; i++) {
+    // todo, do I want to round or floor? I think floor makes more sense for pixel
+    var x = Math.floor((pt1.x + delta.x * 1/CUBE_SIZE * i) * CUBE_SIZE);
+    var y = Math.floor((pt1.y + delta.y * 1/CUBE_SIZE * i) * CUBE_SIZE);
+    var z = Math.floor((pt1.z + delta.z * 1/CUBE_SIZE * i) * CUBE_SIZE);
+
+    if (!inCube(x, y, z)) {
+      break;
+    }
+
+    var checkPoint = new THREE.Mesh(checkVoxelGeometry, checkVoxelMat);
+    checkPoint.position.set((x + 0.5) / CUBE_SIZE, (y + 0.5) / CUBE_SIZE, (z + 0.5) / CUBE_SIZE);
+    checkPointsContainer.add(checkPoint);
+
+    // console.log('check', x,y,z);
+
+    var tile = TileManager.planes[0].tiles[z];
+    var segId = tile.segIdForPosition(x, y);
+
+    if (segId !== 0 && !SegmentManager.isSelected(segId) && !SegmentManager.isSeed(segId)) {
+      if (mock) {
+        SegmentManager.hoverSegId(segId, z);
+      } else {
+        SegmentManager.hoverSegId(segId, z);
+        SegmentManager.selectSegId(segId, function () {
+          SegmentManager.hoverSegId(null);
+        });
+      }
+      return;
+    }
+  }
+
+  console.log('could not find a neighbor', Date.now() - start);
 }
 
 function checkForTileClick(event, notHover) {
@@ -1467,9 +1503,9 @@ function resetZoom() {
 }
 
 function handleInput() {
-  if (key('x', PRESSED)) {
-    resetZoom();
-  }
+  // if (key('x', PRESSED)) {
+  //   resetZoom();
+  // }
 
   if (key('a', PRESSED)) {
     SegmentManager.opacity = 0;
@@ -1501,38 +1537,6 @@ function handleInput() {
 
   if (key('g', PRESSED)) {
     selectNeighboringSegment();
-  }
-
-  if (key('shift', PRESSED)) {
-    selectNeighboringSegment(true);
-  }
-
-  if (key('shift', RELEASED)) {
-    SegmentManager.hoverSegId(null, 0);
-  }
-
-  if (key('z', PRESSED)) {
-      var point = screenToCube(mouse);
-
-      if (point) {
-        console.log(point);
-        animateToPositionAndZoom(point, 4);
-        TileManager.movePlanes(point);
-        // TileManager.setCurrentTile(Math.round((point.z + 0.5) * 256), true);
-      }
-  } else {
-    // if (isZoomed && mouseStart === null) {
-    //   var point = getPositionOnTileFromMouse(mouse);
-
-    //   if (point && point.distanceTo(centerPoint) > 0.2) {
-
-    //       animateToPositionAndZoom(point, 4);
-    //   }
-
-    //   if (point) {
-    //     console.log(point.distanceTo(centerPoint));
-    //   }
-    // }
   }
 
   if (key('r', PRESSED)) {
