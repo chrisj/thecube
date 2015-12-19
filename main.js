@@ -58,7 +58,7 @@ function playTask(task, cb) {
       segments: SegmentManager.selected.join(','),
       duration: 0
     }).done(function (res) {
-      $('#accuracyValue').html(res.accuracy + '%');
+      $('#accuracyValue').html(res.trailblazer ? 'TRAILBLAZER!' : res.accuracy + '%');
       $('#results').show();
     });
   });
@@ -846,23 +846,19 @@ var particleGeo = new THREE.Geometry();
 var maxVoxelCount = 100000;
 
 for (var i = 0; i < 100000; i++) {
-  particleGeo.vertices.push(new THREE.Vector3(0.5, 0.5, 0.5));
+  particleGeo.vertices.push(new THREE.Vector3(-1000, -1000, -1000));
 }
 
 var pMaterial = new THREE.ParticleBasicMaterial({
       color: 0xFFFF00,
-      size: 0.005,
-      transparent: true,
+      size: 0.003,
+      // transparent: true,// this doesn't seem to have an affect, maybe it is always on?
       opacity: 0.5,
       sizeAttenuation: true
 });
 
-// var pMaterial = new THREE.MeshPhongMaterial({ color: 0x00ff00, transparent: true });
-
 var pSystem = new THREE.ParticleSystem(particleGeo, pMaterial);
-
 pSystem.frustumCulled = false;
-
 cubeContents.add(pSystem);
 
 
