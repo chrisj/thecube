@@ -579,62 +579,70 @@ function highlight() {
   // return copy;
 }
 
+var byteBuffer = new ArrayBuffer(256 * 256 * 256);
+var counts = new Int8Array(byteBuffer);
+
 function drawVoxelSegment(plane, segId, startingTile) {
 
   var tiles = plane.tiles;
 
   var segmentRGB = segIdToRGB(segId);
 
-  var thing = {};
+  var segR = segmentRGB[0];
+  var segG = segmentRGB[1];
+  var segB = segmentRGB[2];
 
-  var byteBuffer = new ArrayBuffer(256 * 256 * 256);
-  var counts = new Int8Array(byteBuffer);
+  var thing = {};
 
   var voxelCount = 0;
 
   var voxels = [];
 
-  function getColor(buffer, startIndex) {
-    return [buffer[startIndex], buffer[startIndex+1], buffer[startIndex+2]];
+  function fasterRGBEqual(buffer, offset) {
+    return segR === buffer[offset] && segG === buffer[offset+1] && segB === buffer[offset+2];
   }
 
+  var start = window.performance.now();
+
+  var numTiles = 0;
+
   // direction = 0 (start), 1 up, -1 down
-  function recurse(tile, direction) {
+  (function recurse(tile, direction) {
+    numTiles++;
     if (tile < 0 || tile >= CUBE_SIZE) {
       return;
     }
 
     var tileCount = 0;
 
-    // var positionToParticle = {};
-
     // add voxels
     tiles[tile].drawSegmentation();
     var segPixels = segContext.getImageData(0, 0, CUBE_SIZE, CUBE_SIZE).data;
 
-    for (var j = 0; j < segPixels.length; j += 4) {
-      var rgb = getColor(segPixels, j);
-      if (rgbEqual(segmentRGB, rgb)) {
-          var pixelIdx = j / 4;
+    var z = tile;
+    var zVal = z * 256 * 256;
+    var zValPrev = (z-direction) * 256 * 256;
 
-          var x = pixelIdx % CUBE_SIZE;
-          var y = Math.floor(pixelIdx / CUBE_SIZE);
-          var z = tile;
+    var pixelsPerTile = segPixels.length;
 
-
+    for (var i = 0; i < pixelsPerTile; i += 4) {
+      if (fasterRGBEqual(segPixels, i)) {
+          var pixIdx = i / 4;
           var selfCount = 0;
-          var neighbor = counts[x-1 + y * 256 + z * 256 * 256] <<= 1;
+          var cIdx = pixIdx + zVal;
+
+          var neighbor = counts[cIdx - 1] <<= 1;
           selfCount += neighbor >>> 31;
 
-          neighbor = counts[x + (y-1) * 256 + z * 256 * 256] <<= 1;
+          neighbor = counts[cIdx - 256] <<= 1;
           selfCount += neighbor >>> 31;
 
-          neighbor = counts[x + y * 256 + (z-direction) * 256 * 256] <<= 1;
+          neighbor = counts[pixIdx + zValPrev] <<= 1;
           selfCount += neighbor >>> 31;
 
-          counts[x + y * 256 + z * 256 * 256] = -1 << selfCount;
+          counts[cIdx] = -1 << selfCount;
 
-          voxels.push([x,y,z]);
+          voxels.push(cIdx);
 
           tileCount++;
       }
@@ -648,28 +656,30 @@ function drawVoxelSegment(plane, segId, startingTile) {
         recurse(tile + direction, direction);
       }
     }
-  }
-
-
-  recurse(startingTile, 0);
-
+  })(startingTile, 0);
 
   var offsetMul = 1 / (CUBE_SIZE * 4);
 
   var voxelCount = 0;
+  var potentialCount = voxels.length;
 
-  for (var voxel of voxels) {
-    var x = voxel[0];
-    var y = voxel[1];
-    var z = voxel[2];
-    if (counts[x + y * 256 + z * 256 * 256] < -63) {
+  for (var i = 0; i < potentialCount; i++) {
+    var voxel = voxels[i];
+
+    if (counts[voxel] < -63) {
+      counts[voxel] = 0;
       continue;
     }
+
+    counts[voxel] = 0;
 
     if (voxelCount > maxVoxelCount - 1) {
       break;
     }
 
+    var x = voxel % CUBE_SIZE;
+    var z = Math.floor(voxel / (CUBE_SIZE * CUBE_SIZE));
+    var y = Math.floor((voxel - z * (CUBE_SIZE * CUBE_SIZE)) / CUBE_SIZE);
     particleGeo.vertices[voxelCount].set(
       x / CUBE_SIZE + (Math.random() - 0.5) * offsetMul,
       y / CUBE_SIZE + (Math.random() - 0.5) * offsetMul,
@@ -677,6 +687,10 @@ function drawVoxelSegment(plane, segId, startingTile) {
     );
     voxelCount++;
   }
+
+  var end = window.performance.now();
+
+  console.log('time', end - start, numTiles, (end - start) / numTiles);
 
   return voxelCount;
 }
