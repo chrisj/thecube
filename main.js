@@ -1242,9 +1242,10 @@ function screenToWorld(mouse) {
   var cX = (mouse.x + 1) / 2 * window.innerWidth; // TODO, this will get screwed up with a resize event
   var cY = (mouse.y - 1) / 2 * window.innerHeight * -1;
 
+  var visible = pSystem.visible;
   pSystem.visible = false;
   var depths = ThreeDView.readBuffer(cX, cY, 1, renderer, scene, camera.realCamera, segments, 'depth');
-  pSystem.visible = true;
+  pSystem.visible = visible;
 
   var zDepth = depths[0];
 
@@ -1289,6 +1290,7 @@ function selectNeighboringSegment(mock) {
   var pt1 = screenToCube(mouse);
 
   if (!pt1) {
+    SegmentManager.hoverSegId(null);
     return;
   }
 
