@@ -12,13 +12,15 @@ var bufferCanvas = document.createElement('canvas');
 bufferCanvas.height = bufferCanvas.width = CHUNK_SIZE;
 var bufferContext = bufferCanvas.getContext('2d');
 
-var segCanvas = document.createElement('canvas');
-segCanvas.height = segCanvas.width = CUBE_SIZE;
-var segContext = segCanvas.getContext('2d');
-
 var stagingCanvas = document.createElement('canvas');
 stagingCanvas.height = stagingCanvas.width = CUBE_SIZE;
 var stagingContext = stagingCanvas.getContext('2d');
+
+var bigByteBuffer = new ArrayBuffer(256 * 256 * 256 * 4);
+var pixelToSegId = new Int32Array(bigByteBuffer);
+
+var byteBuffer = new ArrayBuffer(256 * 256 * 256);
+var counts = new Int8Array(byteBuffer);
 
 
 var CHUNKS = [
@@ -100,6 +102,10 @@ function rgbEqual(rgb1, rgb2) {
 
 function rgbToSegId(rgb) {
   return rgb[0] + rgb[1] * 256 + rgb[2] * 256 * 256;
+}
+
+function rgbToSegIdOffset(rgb, offset) {
+  return rgb[offset] + rgb[offset+1] * 256 + rgb[offset+2] * 256 * 256;
 }
 
 function segIdToRGB(segId) {
@@ -487,6 +493,19 @@ Tile.prototype.load = function (data, type, x, y, callback) {
       _this[type][chunk] = image;
       _this.count++;
 
+      bufferContext.drawImage(image, 0, 0);
+      var segPixels = bufferContext.getImageData(0, 0, CHUNK_SIZE, CHUNK_SIZE).data;
+
+      var z = _this.id;
+
+      for (var i = 0; i < 128 * 128; ++i) {
+        var px = i % CHUNK_SIZE + x * CHUNK_SIZE;
+        var py = Math.floor(i / CHUNK_SIZE) + y * CHUNK_SIZE;
+        var pixel = z * 256 * 256 + py * 256 + px;
+
+        pixelToSegId[pixel] = rgbToSegIdOffset(segPixels, i * 4);
+      }
+
       if (_this.isComplete()) { // all tiles have been loaded
         callback(_this);
       }
@@ -494,19 +513,19 @@ Tile.prototype.load = function (data, type, x, y, callback) {
   });
 };
 
-Tile.prototype.drawSegmentation = function () {
-  if (!this.isComplete()) {
-    console.log('not complete');
-    return;
-  }
+// Tile.prototype.drawSegmentation = function () {
+//   if (!this.isComplete()) {
+//     console.log('not complete');
+//     return;
+//   }
 
-  for (var i = 0; i < 4; i++) {
-    var x = i % 2;
-    var y = i < 2 ? 0 : 1;
+//   for (var i = 0; i < 4; i++) {
+//     var x = i % 2;
+//     var y = i < 2 ? 0 : 1;
 
-    segContext.drawImage(this.segmentation[i], x * CHUNK_SIZE, y * CHUNK_SIZE);
-  }
-}
+//     segContext.drawImage(this.segmentation[i], x * CHUNK_SIZE, y * CHUNK_SIZE);
+//   }
+// }
 
 // draw this tile in the 3d view and update the position
 Tile.prototype.draw = function () {
@@ -579,9 +598,6 @@ function highlight() {
   // return copy;
 }
 
-var byteBuffer = new ArrayBuffer(256 * 256 * 256);
-var counts = new Int8Array(byteBuffer);
-
 function drawVoxelSegment(plane, segId, startingTile) {
 
   var tiles = plane.tiles;
@@ -592,71 +608,27 @@ function drawVoxelSegment(plane, segId, startingTile) {
   var segG = segmentRGB[1];
   var segB = segmentRGB[2];
 
-  var thing = {};
-
-  var voxelCount = 0;
-
   var voxels = [];
-
-  function fasterRGBEqual(buffer, offset) {
-    return segR === buffer[offset] && segG === buffer[offset+1] && segB === buffer[offset+2];
-  }
 
   var start = window.performance.now();
 
-  var numTiles = 0;
+  for (var i = 256 * 256 * 256 - 1; i >= 0; --i) {
+    if (pixelToSegId[i] === segId) {
+      var selfCount = 0;
+      var neighbor = counts[i + 1] <<= 1;
+      selfCount += neighbor >>> 31;
 
-  // direction = 0 (start), 1 up, -1 down
-  (function recurse(tile, direction) {
-    numTiles++;
-    if (tile < 0 || tile >= CUBE_SIZE) {
-      return;
+      neighbor = counts[i + 256] <<= 1;
+      selfCount += neighbor >>> 31;
+
+      neighbor = counts[i + 256 * 256] <<= 1;
+      selfCount += neighbor >>> 31;
+
+      counts[i] = -1 << selfCount;
+
+      voxels.push(i);
     }
-
-    var tileCount = 0;
-
-    // add voxels
-    tiles[tile].drawSegmentation();
-    var segPixels = segContext.getImageData(0, 0, CUBE_SIZE, CUBE_SIZE).data;
-
-    var z = tile;
-    var zVal = z * 256 * 256;
-    var zValPrev = (z-direction) * 256 * 256;
-
-    var pixelsPerTile = segPixels.length;
-
-    for (var i = 0; i < pixelsPerTile; i += 4) {
-      if (fasterRGBEqual(segPixels, i)) {
-          var pixIdx = i / 4;
-          var selfCount = 0;
-          var cIdx = pixIdx + zVal;
-
-          var neighbor = counts[cIdx - 1] <<= 1;
-          selfCount += neighbor >>> 31;
-
-          neighbor = counts[cIdx - 256] <<= 1;
-          selfCount += neighbor >>> 31;
-
-          neighbor = counts[pixIdx + zValPrev] <<= 1;
-          selfCount += neighbor >>> 31;
-
-          counts[cIdx] = -1 << selfCount;
-
-          voxels.push(cIdx);
-
-          tileCount++;
-      }
-    }
-
-    if (tileCount > 0) {
-      if (direction === 0) {
-        recurse(tile - 1, -1);
-        recurse(tile + 1, 1);
-      } else {
-        recurse(tile + direction, direction);
-      }
-    }
-  })(startingTile, 0);
+  }
 
   var offsetMul = 1 / (CUBE_SIZE * 4);
 
@@ -690,19 +662,20 @@ function drawVoxelSegment(plane, segId, startingTile) {
 
   var end = window.performance.now();
 
-  console.log('time', end - start, numTiles, (end - start) / numTiles);
+  console.log('time', end - start);//, numTiles, (end - start) / numTiles);
 
   return voxelCount;
 }
 
 // returns the the segment id located at the given x y position of this tile
 Tile.prototype.segIdForPosition = function(x, y) {
-  this.drawSegmentation();
+  // this.drawSegmentation();
 
-  var segPixels = segContext.getImageData(0, 0, CUBE_SIZE, CUBE_SIZE).data;
-  var start = (y * CUBE_SIZE + x) * 4;
-  var rgb = [segPixels[start], segPixels[start+1], segPixels[start+2]];
-  return rgbToSegId(rgb);
+  // var segPixels = segContext.getImageData(0, 0, CUBE_SIZE, CUBE_SIZE).data;
+  // var start = (y * CUBE_SIZE + x) * 4;
+  // var rgb = [segPixels[start], segPixels[start+1], segPixels[start+2]];
+  // return rgbToSegId(rgb);
+  return pixelToSegId[this.id * 256 * 256 + y * 256 + x];
 };
 
 // image operations
