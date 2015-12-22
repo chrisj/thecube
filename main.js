@@ -529,6 +529,7 @@ Tile.prototype.load = function (data, type, x, y, callback) {
 
 // draw this tile in the 3d view and update the position
 Tile.prototype.draw = function () {
+  return;
   if (!this.isComplete()) {
     console.log('not complete');
     return;
@@ -1182,6 +1183,8 @@ function mouseup (event) {
   //   return;
   // }
 
+  selectNeighboringSegment(true);
+
   if (key('shift', HELD)) {
       var point = screenToCube(mouse);
 
@@ -1529,10 +1532,6 @@ function handleInput() {
   }
   if (key('e', PRESSED)) {
     TileManager.setPlane(2);
-  }
-
-  if (key('g', PRESSED)) {
-    selectNeighboringSegment();
   }
 
   if (key('r', PRESSED)) {
