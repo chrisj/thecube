@@ -1193,7 +1193,7 @@ function mouseup (event) {
         animateToPositionAndZoom(point, 4);
         TileManager.movePlanes(point);
       }
-  } else if (key('ctrl', HELD)) {
+  } else if (key('ctrl', HELD) || event.button === 2) {
     // return;
     console.log('checking for segment to remove');
     checkForSegmentClick(event.clientX, event.clientY);
@@ -1208,10 +1208,6 @@ function mousemove (event) {
   if (!mouseStart) {
     selectNeighboringSegment(true);
   }
-
-  // if (!mouseStart) {
-  //   checkForTileClick(event);
-  // } else {}
 }
 
 $(document).stationaryClick(function (event) {
@@ -1219,7 +1215,7 @@ $(document).stationaryClick(function (event) {
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
   // checkForTileClick(event, false);
 
-  if (!key('ctrl', HELD) && !key('shift', HELD)) {
+  if (!key('ctrl', HELD) && !key('shift', HELD) && event.button !== 2) {
     selectNeighboringSegment();
   }
 });
