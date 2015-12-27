@@ -265,7 +265,7 @@ var SegmentManager = {
     }
 
     if (segId !== null) {
-      this.lastHoverCount = drawVoxelSegment(TileManager.getPlane(), segId, startingTile);
+      this.lastHoverCount = drawVoxelSegment(segId);
     }
 
     particleGeo.verticesNeedUpdate = true;
@@ -599,16 +599,7 @@ function highlight() {
   // return copy;
 }
 
-function drawVoxelSegment(plane, segId, startingTile) {
-
-  var tiles = plane.tiles;
-
-  var segmentRGB = segIdToRGB(segId);
-
-  var segR = segmentRGB[0];
-  var segG = segmentRGB[1];
-  var segB = segmentRGB[2];
-
+function drawVoxelSegment(segId) {
   var voxels = [];
 
   var start = window.performance.now();
@@ -631,7 +622,7 @@ function drawVoxelSegment(plane, segId, startingTile) {
     }
   }
 
-  var offsetMul = 1 / (CUBE_SIZE * 4);
+  var offsetMul = 1 / (CUBE_SIZE * 8);
 
   var voxelCount = 0;
   var potentialCount = voxels.length;
@@ -802,11 +793,6 @@ var cube = new THREE.Object3D();
 cube.name = "DA CUBE";
 pivot.add(cube);
 
-var light = new THREE.DirectionalLight(0xffffff);
-light.name = "pixar light";
-light.position.copy(camera.realCamera.position);
-scene.add(light);
-
 var cubeShape = new THREE.Mesh(
   new THREE.BoxGeometry(1, 1, 1),
   new THREE.MeshNormalMaterial({visible: false})
@@ -829,23 +815,31 @@ cubeContents.add(segments);
 
 // particle system
 
+var sprite = THREE.ImageUtils.loadTexture( "./circle2.png" );
+
+
 var particleGeo = new THREE.Geometry();
 
 var maxVoxelCount = 100000;
 
-for (var i = 0; i < 100000; i++) {
+for (var i = maxVoxelCount - 1; i >= 0; --i) {
   particleGeo.vertices.push(new THREE.Vector3(-1000, -1000, -1000));
 }
 
-var pMaterial = new THREE.ParticleBasicMaterial({
+var pMaterial = new THREE.PointsMaterial({
       color: 0xFFFF00,
-      size: 0.003,
-      // transparent: true,// this doesn't seem to have an affect, maybe it is always on?
+      size: 0.008,
+      transparent: true,// this doesn't seem to have an affect, maybe it is always on?
       opacity: 0.5,
-      sizeAttenuation: true
+      sizeAttenuation: true,
+      map: sprite,
+      // alphaTest: 0.7,
+      blending: THREE.AdditiveBlending,
+      // depthTest: false
+      depthWrite: false
 });
 
-var pSystem = new THREE.ParticleSystem(particleGeo, pMaterial);
+var pSystem = new THREE.Points(particleGeo, pMaterial);
 pSystem.frustumCulled = false;
 cubeContents.add(pSystem);
 
@@ -1021,7 +1015,7 @@ function displayMeshForVolumeAndSegId(volume, segId, done) {
 
           console.log('totalLength', totalLength, lengths);
 
-          var color = SegmentManager.isSeed(segId) ? 'blue' : 'green';
+          var color = SegmentManager.isSeed(segId) ? "rgb(0, 104, 242)" : "rgb(40, 205, 255)";
           var shader = $.extend(true, {
             transparent: true
           }, Shaders.idPacked);

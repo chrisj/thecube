@@ -18,6 +18,8 @@ THREE.Segment = function (interleavedData, lengths, material) {
     _gl.bindBuffer(_gl.ARRAY_BUFFER, _webglPositionNormalBuffer);
     _gl.bufferData(_gl.ARRAY_BUFFER, _this.interleavedData, _gl.STATIC_DRAW);
 
+    _gl.disable(_gl.BLEND);
+
     // NB: Unintiuitive bug fix. Compiler was optimizing away
     // the normal attribute in certain builds of firefox and
     // seemingly randomly returning -1 for the normal attribute
@@ -38,15 +40,15 @@ THREE.Segment = function (interleavedData, lengths, material) {
     // }
 
     // _gl.enableVertexAttribArray(index);
-    _gl.enableVertexAttribArray(program.attributes.position);
+    _gl.enableVertexAttribArray(program.getAttributes().position);
 
-    if (program.attributes.normal !== -1) { // TODO, doing this because of the depth buffer, seems like it isn't a problem with omniweb
-      _gl.enableVertexAttribArray(program.attributes.normal);
-      _gl.vertexAttribPointer(program.attributes.normal, 3, _gl.FLOAT, false, 24, 12);
+    if (program.getAttributes().normal !== -1) { // TODO, doing this because of the depth buffer, seems like it isn't a problem with omniweb
+      _gl.enableVertexAttribArray(program.getAttributes().normal);
+      _gl.vertexAttribPointer(program.getAttributes().normal, 3, _gl.FLOAT, false, 24, 12);
     }
 
     // _gl.vertexAttribPointer(index, size, type, normalized, stride, pointer)
-    _gl.vertexAttribPointer(program.attributes.position, 3, _gl.FLOAT, false, 24, 0);
+    _gl.vertexAttribPointer(program.getAttributes().position, 3, _gl.FLOAT, false, 24, 0);
 
     // if (program.attributes.normal !== -1) {
       
