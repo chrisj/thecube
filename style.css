@@ -24,6 +24,28 @@ button {
 	position: absolute;
 }
 
+#validationInfo {
+	position: absolute;
+	width: 250px;
+	height: 250px;
+
+	background-color: rgba(0,0,0,.5);
+	color: white;
+
+	border: 1px solid white;
+
+
+	padding: 50px;
+
+	margin: auto;
+	top: 0px;
+	right: 0px;
+}
+
+#conVer {
+	font-size: 50px;
+}
+
 #results {
 	display: none;
 	position: absolute;

@@ -46,7 +46,7 @@ function playTask(task, cb) {
   function loadTaskData(done) {
     waitForAll([
       loadSeedMeshes,
-      loadTiles
+      // loadTiles
     ], done);
   }
 
@@ -85,7 +85,7 @@ function assign(taskId, done) {
       playTask(task, done);
   });
 }
-assign(332, function () {
+assign(tasks[0], function () {
   console.log('loaded first cube');
 });
 
@@ -138,37 +138,34 @@ var PlaneManager = {
 var seedColor = [0, 0, 255];
 var selectedColor = [0, 255, 0];
 
-// var selectSegIdTween = null;
-// var hideSegIdTween = null;
+// function SegmentProxy(segId) {
 
-function SegmentProxy(segId) {
+//   var mesh = SegmentManager.meshes[segId];
 
-  var mesh = SegmentManager.meshes[segId];
+//   return {
+//     get opacity() {
+//       return mesh.material.uniforms.opacity.value;
+//     },
 
-  return {
-    get opacity() {
-      return mesh.material.uniforms.opacity.value;
-    },
+//     set opacity(op) {
+//       mesh.material.uniforms.opacity.value = op;
 
-    set opacity(op) {
-      mesh.material.uniforms.opacity.value = op;
+//       console.log(op);
 
-      console.log(op);
+//       var eps = 0.05;
 
-      var eps = 0.05;
-
-      if (op < eps) {
-        mesh.visible = false;
-      } else if (op === 1) {
-        mesh.visible = true;
-        // mesh.material.transparent = false; // TODO, why does this cause the segment to blip?
-      } else {
-        mesh.visible = true;
-        mesh.material.transparent = true;
-      }
-    }
-  }
-}
+//       if (op < eps) {
+//         mesh.visible = false;
+//       } else if (op === 1) {
+//         mesh.visible = true;
+//         // mesh.material.transparent = false; // TODO, why does this cause the segment to blip?
+//       } else {
+//         mesh.visible = true;
+//         mesh.material.transparent = true;
+//       }
+//     }
+//   }
+// }
 
 var SegmentManager = {
   // defaults, reset in loadForTask
@@ -227,10 +224,11 @@ var SegmentManager = {
 
     var _this = this;
 
+    var seedColor = "rgb(0, 104, 242)";
     function loadSeedMeshes(done) {
       var seedsLoaded = 0;
       _this.seeds.forEach(function (segId) {
-        displayMeshForVolumeAndSegId(task.segmentation_id, segId, function () {
+        displayMeshForVolumeAndSegId(task.segmentation_id, segId, seedColor, function () {
           seedsLoaded++;
           if (seedsLoaded === _this.seeds.length) {
             done();
@@ -240,6 +238,22 @@ var SegmentManager = {
     }
 
     return loadSeedMeshes;
+  },
+
+  getSegmentSizes: function (segments, done) {
+        // http://data.eyewire.org/volume/' + assignedTask.segmentation_id + '/segment/merge_metadata`,
+    var url = 'http://data.eyewire.org/volume/' + assignedTask.segmentation_id + '/segment/merge_metadata';
+
+    if (segments.length === 0) {
+      done(0);
+      return;
+    }
+
+    $.post(url, {
+      segments: segments
+    }).done(function (res) {
+      done(res.size)
+    });
   },
 
   isSeed: function (segId) {
@@ -252,11 +266,7 @@ var SegmentManager = {
     if (segId === this.hover) {
       return;
     }
-    console.log('hover', segId);
     this.hover = segId;
-
-    // clear current voxels
-    // hoverContainer.remove.apply(hoverContainer, hoverContainer.children);
 
     if (this.lastHoverCount) {
       for (var i = 0; i < this.lastHoverCount; i++) {
@@ -269,7 +279,6 @@ var SegmentManager = {
     }
 
     particleGeo.verticesNeedUpdate = true;
-
     needsRender = true;
   },
   selectSegId: function (segId, cb) {
@@ -284,13 +293,9 @@ var SegmentManager = {
 
     var _this = this;
 
-    displayMeshForVolumeAndSegId(assignedTask.segmentation_id, segId, function () {
-      var duration = 500;
+    var selectedColor = "rgb(40, 205, 255)";
 
-      var indvTweenOut = new TWEEN.Tween(SegmentProxy(segId)).to({ opacity: SegmentManager.opacity }, duration).onUpdate(function () {
-        needsRender = true;
-      }).start();
-
+    displayMeshForVolumeAndSegId(assignedTask.segmentation_id, segId, selectedColor, function () {
       if (cb) {
         cb();
       }
@@ -303,53 +308,44 @@ var SegmentManager = {
     }
     var selectedIdx = this.selected.indexOf(segId);
     this.selected.splice(selectedIdx, 1);
-    // selectedIdx = this.selectedColors.indexOf(segIdToRGB(segId));
-    // this.selectedColors.splice(selectedIdx, 1);
-
-    // console.log('deselect', segId, this.selected, this.selectedColors);
 
     TileManager.currentTile().draw();
 
 
     var duration = 1000;
 
-    // var indvTweenOut = new TWEEN.Tween(PlaneManager).to({ opacity: 0.8 }, duration).onUpdate(function () {
-    //   needsRender = true;
-    // })
-    // .repeat(1)
-    // .yoyo(true)
-    // .start();
-
     var segMesh = this.meshes[segId];
 
     // temporary
     segments.remove(segMesh);
     needsRender = true;
-    return;
-
-    var showSeg = new TWEEN.Tween(SegmentProxy(segId)).to({ opacity: 1.0 }, duration / 2)
-    .onUpdate(function () {
-        needsRender = true;
-    })
-    .repeat(1)
-    .yoyo(true)
-    .start();
-
-
-    var randomX = Math.random() * 8 - 4;
-    var randomY = Math.random() * 8 - 4;
-
-    var launchSeg = new TWEEN.Tween(segMesh.position).to({ x: randomX, y: randomY, z: "-5" }, duration)
-    .easing(TWEEN.Easing.Cubic.In)
-    .onUpdate(function () {
-        needsRender = true;
-    }).onComplete(function () {
-      segments.remove(segMesh);
-      segMesh.position.set(0, 0, 0);
-    }).start();
   },
-  displayMesh: function (segId) {
+  displayMesh: function (segId, opacity) {
+    console.log('opacity', opacity);
+    // this.meshes[segId].material.transparent = true;
+
+    // if (opacity > 0.5) {
+    //   opacity = (opacity - 0.5) / 0.5;
+    // } else {
+    //   opacity = 1;
+    // }
+
+    this.meshes[segId].material.uniforms.opacity.value = opacity === undefined ? 1 : Math.max(0.1, opacity);
     segments.add(this.meshes[segId]);
+    needsRender = true;
+  },
+  hideAllMeshes: function () {
+    for (var i = segments.children.length - 1; i >= 0; --i) {
+      if (!this.isSeed(segments.children[i].segId)) {
+        segments.remove(segments.children[i]);
+      }
+    }
+
+    needsRender = true;
+  },
+  hideMesh: function (segId) {
+    segments.remove(this.meshes[segId]);
+    needsRender = true;
   },
   addMesh: function (segId, mesh) {
     this.meshes[segId] = mesh;
@@ -718,6 +714,7 @@ var renderer = new THREE.WebGLRenderer({
   // preserveDrawingBuffer: true, // TODO, maybe this is sometimes required if you use ctx.readpixels but since we call it immediately after render, it isn't actually required
   alpha: false,
 });
+renderer.setClearColor( 0xffffff );
 // renderer.state.setDepthTest(false); // TODO, why did we do this?
 
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -827,8 +824,8 @@ for (var i = maxVoxelCount - 1; i >= 0; --i) {
 }
 
 var pMaterial = new THREE.PointsMaterial({
-      color: 0xFFFF00,
-      size: 0.008,
+      color: 0x00FF00,
+      size: 0.005,
       transparent: true,// this doesn't seem to have an affect, maybe it is always on?
       opacity: 0.5,
       sizeAttenuation: true,
@@ -966,17 +963,12 @@ TileManager.setPlane(0);
 // loads the mesh for the given segment in the given volume. Calls the done handler
 // when the mesh is ready for display. If the mesh is selected or is a seed, it
 // displays the segment.
-function displayMeshForVolumeAndSegId(volume, segId, done) {
-  var doneWrapper = function () {
-    if (done) {
-      done();
-    }
-    needsRender = true;
-  };
-
+function displayMeshForVolumeAndSegId(volume, segId, color, done) {
   if (SegmentManager.loaded(segId)) {
-    SegmentManager.displayMesh(segId);
-    doneWrapper();
+    SegmentManager.meshes[segId].material.uniforms.color.value = new THREE.Color(color);
+    // todo, should check to see if segId is actually selected? though this is instantaneous
+    // SegmentManager.displayMesh(segId);
+    done();
   } else {
     var count = CHUNKS.length; // ensure that we have a response for each chunk
 
@@ -998,8 +990,6 @@ function displayMeshForVolumeAndSegId(volume, segId, done) {
           lengths[idx] = 0;
         }
         if (count === 0) {
-          console.log('done loading mesh');
-
           var allData = new Float32Array(totalLength);
 
           var currentLength = 0;
@@ -1015,7 +1005,6 @@ function displayMeshForVolumeAndSegId(volume, segId, done) {
 
           console.log('totalLength', totalLength, lengths);
 
-          var color = SegmentManager.isSeed(segId) ? "rgb(0, 104, 242)" : "rgb(40, 205, 255)";
           var shader = $.extend(true, {
             transparent: true
           }, Shaders.idPacked);
@@ -1024,11 +1013,12 @@ function displayMeshForVolumeAndSegId(volume, segId, done) {
             u.color.value = new THREE.Color(color);
             u.segid.value = segId;
             u.mode.value = 0;
+            // u.opacity.value = 0.5;
           }
 
           var material = new THREE.ShaderMaterial(shader);
 
-          material.transparent = false;
+          material.transparent = true;
 
           var segmentMesh = new THREE.Segment(
             allData,
@@ -1044,10 +1034,10 @@ function displayMeshForVolumeAndSegId(volume, segId, done) {
           if (SegmentManager.isSelected(segId) || SegmentManager.isSeed(segId)) {
             SegmentManager.displayMesh(segId);
           } else {
-            console.log('not adding mesh');
+            console.log('not adding mesh', segId);
           }
 
-          doneWrapper();
+          done();
         }
       });
     });
@@ -1198,9 +1188,15 @@ function mousemove (event) {
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1; // why *2 - 1?
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
+   $('#segProb').html('Prob: ?');
 
   if (!mouseStart) {
-    selectNeighboringSegment(true);
+    var segId = getSegmentAtPosition(event.clientX, event.clientY);
+    if (segId) {
+      $('#segProb').html('Prob: ' + (probMap ? probMap[segId].toFixed(4) : 'unknown'));
+    }
+
+    // selectNeighboringSegment(true);
   }
 }
 
@@ -1306,8 +1302,10 @@ function selectNeighboringSegment(mock) {
 
     // console.log('check', x,y,z);
 
-    var tile = TileManager.planes[0].tiles[z];
-    var segId = tile.segIdForPosition(x, y);
+    return pixelToSegId[z * 256 * 256 + y * 256 + x];
+
+    // var tile = TileManager.planes[0].tiles[z];
+    var segId = pixelToSegId[z * 256 * 256 + y * 256 + x];//= tile.segIdForPosition(x, y);
 
     if (segId !== 0 && !SegmentManager.isSelected(segId) && !SegmentManager.isSeed(segId)) {
       if (mock) {
@@ -1365,6 +1363,19 @@ function checkForTileClick(event, notHover) {
   } else {
     // console.log('no interesects', intersects);
   }
+}
+
+function getSegmentAtPosition(x, y) {
+  wireframe.visible = false;
+  var cPlane = TileManager.getPlane();
+  cPlane.plane.visible = false;
+  pSystem.visible = false;
+  var ids = ThreeDView.readBuffer(x, y, 1, renderer, scene, camera.realCamera, segments, 'segid');
+  pSystem.visible = true;
+  cPlane.plane.visible = true;
+  wireframe.visible = true;
+
+  return ids[0];
 }
 
 function checkForSegmentClick(x, y) {
@@ -1533,6 +1544,264 @@ function handleInput() {
       console.log(segment.material.uniforms.opacity.value, segment.visible, segment.material.transparent);
     });
   }
+
+  if (key('right', PRESSED)) {
+    if (count < playerOrder.length) {
+      count++;
+      renderConsensus();
+    }
+  }
+
+  if (key('left', PRESSED)) {
+    if (count > 0) {
+      count--;
+      renderConsensus();
+    }
+  }
+
+  if (key('up', PRESSED)) {
+    consensusVersion = (consensusVersion + 1) % 2;
+    renderConsensus();
+  }
+
+  if (key('down', PRESSED)) {
+    if (playerOrReap) {
+      renderConsensus();
+    } else {
+      renderReap();
+    }
+  }
+
+  if (key('p', PRESSED)) {
+    if (taskNum < tasks.length - 1) {
+      taskNum++;
+      switchTask();
+    }
+  }
+
+  if (key('l', PRESSED)) {
+    if (taskNum > 0) {
+      taskNum--;
+      switchTask();      
+    }
+  }
+}
+
+function switchTask() {
+  count = 0;
+  $('#taskNum').html('Task: ...');
+  assign(tasks[taskNum], function () {
+    $('#taskNum').html('Task: #' + taskNum);
+
+    if (playerOrReap) {
+      renderReap();
+    } else {
+      renderConsensus(); 
+    }
+  });
+}
+
+var playerOrder = [58950, 171304, 9641, 42314, 118490, 150678, 184132];
+
+
+var count = 0;
+
+var taskNum = 0;
+
+// var previousConsensus = [];
+// var prevAdd;
+// var prevDel = [];
+
+var probMap = null;
+
+var consensusVersion = 1;
+
+var playerOrReap = 0;
+
+function computeConsensus(taskNum, players) {
+  if (consensusVersion === 1) {
+    $('#conVer').html("NEW CONSENSUS");
+    return computeNewConsensus(taskNum, players);
+  } else {
+    $('#conVer').html("OLD CONSENSUS");
+    return computeOldConsensus(taskNum, players);
+  }
+}
+
+function threshold(segments, weight) {
+  var thresh = 0.5;
+
+  if (consensusVersion < 1) {
+    thresh = Math.min(0.99, 1.00 * Math.exp(-0.320 * weight) + 0.220);
+  }
+
+  var consensus = [];
+
+  for (var segId in segments) {
+    if (segments[segId] > thresh) {
+      segId = Number(segId);
+      consensus.push(segId);
+    }
+  }
+
+  return consensus;
+}
+
+function threshHoldConsensus(taskNum, players) {
+  var con = computeConsensus(taskNum, players);
+
+  return threshold(con[0], con[1]);
+}
+
+function renderReap() {
+  $('#conVer').html("REAP CONSENSUS");
+  $('#user').html('Grim Reaper');
+  $('#weight').html('Weight: very large');
+  playerOrReap = 1;
+  SegmentManager.hideAllMeshes();
+
+  probMap = reaps[taskNum];
+  var reapCon = threshold(probMap, 100000);
+
+  for (var segId of reapCon) {
+    if (!SegmentManager.isSeed(segId)) {
+      displayMeshForVolumeAndSegId(assignedTask.segmentation_id, segId, 'yellow', function () {
+        SegmentManager.displayMesh(segId, probMap[segId]);
+      });
+    }
+  }
+}
+
+function renderConsensus() {
+  playerOrReap = 0;
+  SegmentManager.hideAllMeshes();
+
+  probMap = computeConsensus(taskNum, playerOrder.slice(0, count))[0];
+
+  var weight = computeConsensus(taskNum, playerOrder.slice(0, count))[1];
+  $('#totalWeight').html(weight.toFixed(2));
+
+  var consensus = threshHoldConsensus(taskNum, playerOrder.slice(0, count));
+
+  var previousConsensus = count > 0 ? threshHoldConsensus(taskNum, playerOrder.slice(0, count - 1)) : [];
+  
+  var playerSegs = count > 0 ? Object.keys(data[playerOrder[count - 1]].vals[taskNum]).map(Number) : [];
+
+  if (count > 0) {
+    $('#user').html('User ID: ' + playerOrder[count - 1]);
+    $('#weight').html('Weight: ' + data[playerOrder[count - 1]].weight);
+    $('#p0p1').html('P0: ' + data[playerOrder[count - 1]].prob.p0.toFixed(4) + ' P1:' + data[playerOrder[count - 1]].prob.p1.toFixed(4));
+  } else {
+    $('#user').html('');
+  }
+
+  var add = [];
+  var del = [];
+  var remainder = [];
+
+  for (var segId of consensus) {
+    if (previousConsensus.indexOf(segId) === -1 && !SegmentManager.isSeed(segId)) {
+      add.push(segId);
+    }
+  }
+
+  var playerOver = [];
+  var playerUnder = [];
+
+  for (var segId of playerSegs) {
+    if (consensus.indexOf(segId) === -1) {
+      // not in consensus so overcolor
+      playerOver.push(segId);
+    }
+  }
+
+  for (var segId of consensus) {
+    if (playerSegs.indexOf(segId) === -1) {
+      playerUnder.push(segId);
+    }
+  }
+
+  for (var segId of previousConsensus) {
+    if (consensus.indexOf(segId) === -1 && !SegmentManager.isSeed(segId)) {
+      del.push(segId);
+    } else if (consensus.indexOf(segId) !== -1) {
+      remainder.push(segId);
+    }
+  }
+
+  for (let segId of add) {
+    displayMeshForVolumeAndSegId(assignedTask.segmentation_id, segId, 'lightblue', function () {
+      SegmentManager.displayMesh(segId, probMap[segId]);
+    });
+  }
+
+  for (let segId of remainder) {
+    if (!SegmentManager.isSeed(segId)) {
+      displayMeshForVolumeAndSegId(assignedTask.segmentation_id, segId, 'rgb(40, 205, 255)', function () {
+        SegmentManager.displayMesh(segId, probMap[segId]);
+      });
+    }
+  }
+
+  for (var segId of playerOver) {
+    if (!SegmentManager.isSeed(segId)) {
+      displayMeshForVolumeAndSegId(assignedTask.segmentation_id, segId, 'green', function () {
+        SegmentManager.displayMesh(segId, probMap[segId]);
+      });
+    }
+  }
+
+  for (var segId of playerUnder) {
+    if (!SegmentManager.isSeed(segId)) {
+      displayMeshForVolumeAndSegId(assignedTask.segmentation_id, segId, 'red', function () {
+        SegmentManager.displayMesh(segId, probMap[segId]);
+      });
+    }
+  }
+
+  for (let segId of del) {
+    // SegmentManager.hideMesh(segId);
+    displayMeshForVolumeAndSegId(assignedTask.segmentation_id, segId, 'rgb(50, 50, 50)', function () {
+      SegmentManager.displayMesh(segId, probMap[segId]);
+    });
+  }
+
+  var reap = reaps[taskNum];
+  var reapCon = threshold(reap, 100000);
+
+  var overSegs = [];
+  var underSegs = [];
+
+  var trueSegs = [];
+
+  for (let segId of consensus) {
+    if (reapCon.indexOf(segId) === -1) {
+      overSegs.push(segId);
+    } else {
+      trueSegs.push(segId);
+    }
+  }
+
+  for (let segId of reapCon) {
+    if (consensus.indexOf(segId) === -1) {
+      underSegs.push(segId);
+    }
+  }
+
+  $('#overSize').html('Over: ' + '...');
+  $('#underSize').html('Under: ' + '...');
+  $('#accuracy').html('Accuracy: ' + '...');
+  SegmentManager.getSegmentSizes(overSegs, function (fp) {
+    $('#overSize').html('Over: ' + fp);
+
+    SegmentManager.getSegmentSizes(underSegs, function (fn) {
+      $('#underSize').html('Under: ' + fn);
+
+      SegmentManager.getSegmentSizes(trueSegs, function (tp) {
+        $('#accuracy').html('Accuracy: ' + (2 * tp / (2 * tp + fp + fn)));
+      });
+    });
+  });
 }
 
 

@@ -18,7 +18,7 @@ THREE.Segment = function (interleavedData, lengths, material) {
     _gl.bindBuffer(_gl.ARRAY_BUFFER, _webglPositionNormalBuffer);
     _gl.bufferData(_gl.ARRAY_BUFFER, _this.interleavedData, _gl.STATIC_DRAW);
 
-    _gl.disable(_gl.BLEND);
+    // _gl.disable(_gl.BLEND);
 
     // NB: Unintiuitive bug fix. Compiler was optimizing away
     // the normal attribute in certain builds of firefox and
