@@ -1701,7 +1701,7 @@ var camera = (function (perspFov, viewHeight) {
   var realCamera = new THREE.PerspectiveCamera(
     perspFov, // Field of View (degrees)
     window.innerWidth / window.innerHeight, // Aspect ratio (set later) TODO why?
-    0.01, // Inner clipping plane // TODO, at 0.1 you start to see white artifacts when scrolling quickly
+    0.1, // Inner clipping plane // TODO, at 0.1 you start to see white artifacts when scrolling quickly
     // TODO, small inner clipping causes depth buffer issue, lot to read about but really small inner plane destroys z precision
     10 // Far clipping plane
   );
