@@ -27,7 +27,7 @@ button {
 #validationInfo {
 	position: absolute;
 	width: 250px;
-	height: 250px;
+	/*height: 250px;*/
 
 	background-color: rgba(0,0,0,.5);
 	color: white;
@@ -87,4 +87,46 @@ button {
 	margin: auto;
 	left: 0;
 	right: 0;
+}
+
+ul {
+	list-style-type: none;
+	-webkit-padding-start: 10px;
+}
+
+li {
+	margin-left: 0;
+}
+
+.colorBox {
+	width: 10px;
+	height: 10px;
+	display: inline-block;
+	margin-right: 10px;
+
+}
+
+.seed {
+	background-color: blue;
+}
+
+.added {
+	background-color: lightblue;
+}
+
+.agreed
+{
+	background-color: rgb(40, 205, 255);
+}
+
+.overcolor {
+	background-color: green;
+}
+
+.undercolor {
+	background-color: red;
+}
+
+.removed {
+	background-color: rgb(50, 50, 50);
 }
