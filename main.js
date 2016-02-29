@@ -990,7 +990,7 @@ function playTask(task) {
 function start() {
   //1029032
   //1043593  this one has segment 
-  $.post('https://eyewire.org/2.0/tasks/testassign').done(playTask);
+  $.post('https://tasking.eyewire.org/1.0/tasks/testassign').done(playTask);
 }
 start();
 
