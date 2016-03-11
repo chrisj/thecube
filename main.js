@@ -20,6 +20,7 @@ var stagingCanvas = document.createElement('canvas');
 stagingCanvas.height = stagingCanvas.width = CUBE_SIZE;
 var stagingContext = stagingCanvas.getContext('2d');
 
+var pixelToSegId = new Int32Array(256 * 256 * 256);
 
 var CHUNKS = [
   [0,0,0],
@@ -39,10 +40,11 @@ function setTask(task) {
   var loadSeedMeshes = SegmentManager.loadForTask(task); // TODO, this is ugly
 
   function loadTaskData(done) {
-    waitForAll([
-      loadSeedMeshes,
-      loadTiles
-    ], done);
+    loadTiles(function () {
+      loadSeedMeshes(function () {
+        done();
+      });
+    });
   }
 
   loadTaskData(function () {
@@ -125,6 +127,33 @@ function SegmentProxy(segId) {
   }
 }
 
+function generateMeshForSegment(segId) {
+  var segGeo = generateGeoForSegment(segId, pixelToSegId);
+
+  var color = SegmentManager.isSeed(segId) ? "rgb(0, 104, 242)" : "rgb(40, 205, 255)";
+  var shader = $.extend(true, {
+    transparent: true,
+    side: THREE.DoubleSide
+  }, Shaders.idPacked);
+  
+  var u = shader.uniforms;
+  u.color.value = new THREE.Color(color);
+  u.segid.value = segId;
+  u.mode.value = 0;
+  u.opacity.value = SegmentManager.opacity;
+
+  u.nMin.value = new THREE.Vector3(0.0, 0.0, planes.z.position.z);
+  u.nMax.value = new THREE.Vector3(1.0, 1.0, 1.0);
+
+  var material = new THREE.ShaderMaterial(shader);
+
+  var segMesh = new THREE.Mesh(segGeo, material);
+
+  material.issegment = true; // hacked three.js so that we can render transparent segments before and after the plane
+
+  return segMesh;
+}
+
 var SegmentManager = {
   // defaults, reset in loadForTask
   selected: [],
@@ -185,42 +214,40 @@ var SegmentManager = {
     TileManager.currentTile().draw();
     needsRender = true;
 
+    if (!this.meshes[segId]) {
+      this.addMesh(segId, generateMeshForSegment(segId));
+    }
+
+    this.displayMesh(segId);
+
+    var duration = 500;
+
     var _this = this;
 
-    displayMeshForVolumeAndSegId(assignedTask.segmentation_id, segId, function () {
-      var duration = 500;
+    if (controls.snapState === controls.SNAP_STATE.ORTHO) {
+      this.meshes[segId].visible = true;
+      var indvTweenOut = new TWEEN.Tween(SegmentProxy(segId)).to({ opacity: 1.0 }, duration).onUpdate(function () {
+        needsRender = true;
+      })
+      .repeat(1)
+      .yoyo(true)
+      .onComplete(function () {
+        _this.meshes[segId].visible = false;
+      })
+      .start();
 
-      if (controls.snapState === controls.SNAP_STATE.ORTHO) {
-        _this.meshes[segId].visible = true;
-        _this.meshes[segId].material.transparent = true;
-        var indvTweenOut = new TWEEN.Tween(SegmentProxy(segId)).to({ opacity: 1.0 }, duration).onUpdate(function () {
-          needsRender = true;
-        })
-        .repeat(1)
-        .yoyo(true)
-        .onComplete(function () {
-          _this.meshes[segId].visible = false;
-        })
-        .start();
+      var reshowPlaneTween = new TWEEN.Tween(PlaneManager).to({ opacity: 1.0 }, duration).onUpdate(function () {
+        needsRender = true;
+      });
 
-        // var indvTween = new TWEEN.Tween(SegmentProxy(segId)).to({ opacity: 0.8 }, duration).onUpdate(function () {
-        //   needsRender = true;
-        // }).start();
-
-
-        var reshowPlaneTween = new TWEEN.Tween(PlaneManager).to({ opacity: 1.0 }, duration).onUpdate(function () {
-          needsRender = true;
-        });
-
-        var hidePlaneTween = new TWEEN.Tween(PlaneManager).to({ opacity: 0.8 }, duration).onUpdate(function () {
-          needsRender = true;
-        }).chain(reshowPlaneTween).start();
-      } else {
-        var indvTweenOut = new TWEEN.Tween(SegmentProxy(segId)).to({ opacity: SegmentManager.opacity }, duration).onUpdate(function () {
-          needsRender = true;
-        }).start();
-      }
-    });
+      var hidePlaneTween = new TWEEN.Tween(PlaneManager).to({ opacity: 0.8 }, duration).onUpdate(function () {
+        needsRender = true;
+      }).chain(reshowPlaneTween).start();
+    } else {
+      var indvTweenOut = new TWEEN.Tween(SegmentProxy(segId)).to({ opacity: SegmentManager.opacity }, duration).onUpdate(function () {
+        needsRender = true;
+      }).start();
+    }
   },
 
   deselectSegId: function (segId) {
@@ -281,13 +308,13 @@ var SegmentManager = {
     function loadSeedMeshes(done) {
       var seedsLoaded = 0;
       _this.seeds.forEach(function (segId) {
-        displayMeshForVolumeAndSegId(task.segmentation_id, segId, function () {
-          seedsLoaded++;
-          if (seedsLoaded === _this.seeds.length) {
-            done();
-          }
-        });
+        console.log('generateMeshForSegment(' + segId + ')');
+        _this.addMesh(segId, generateMeshForSegment(segId));
+        _this.displayMesh(segId);
+        needsRender = true;
       });
+
+      done();
     }
 
     return loadSeedMeshes;
@@ -356,6 +383,10 @@ function convertBase64ImgToImage(b64String, callback) {
   imageBuffer.src = b64String;
 }
 
+function rgbToSegIdOffset(rgb, offset) {
+  return rgb[offset] + rgb[offset+1] * 256 + rgb[offset+2] * 256 * 256;
+}
+
 // loads all the segmentation and channel images for this tile
 // and runs the callback when complete
 // tiles are queued for loading to throttle the rate.
@@ -374,6 +405,21 @@ Tile.prototype.load = function (data, type, x, y, callback) {
     convertBase64ImgToImage(data, function (image) {
       _this[type][chunk] = image;
       _this.count++;
+
+      if (type === 'segmentation') {
+        bufferContext.drawImage(image, 0, 0);
+        var segPixels = bufferContext.getImageData(0, 0, CHUNK_SIZE, CHUNK_SIZE).data;
+
+        var z = _this.id;
+
+        for (var i = 0; i < 128 * 128; ++i) {
+          var px = i % CHUNK_SIZE + x * CHUNK_SIZE;
+          var py = Math.floor(i / CHUNK_SIZE) + y * CHUNK_SIZE;
+          var pixel = z * 256 * 256 + py * 256 + px;
+
+          pixelToSegId[pixel] = rgbToSegIdOffset(segPixels, i * 4);
+      }
+      }
 
       if (_this.isComplete()) { // all tiles have been loaded
         callback(_this);
@@ -663,15 +709,9 @@ pivot.add(cube);
 
 cube.name = "DA CUBE";
 
-var light = new THREE.DirectionalLight(0xffffff);
-light.position.copy(camera.realCamera.position);
-scene.add(light);
-
-light.name = "pixar light";
-
 var wireframe = new THREE.BoxHelper(cube);
 wireframe.material.color.set("#000000");
-scene.add(wireframe);
+cube.add(wireframe);
 
 wireframe.name = "ol' wires";
 
@@ -990,7 +1030,7 @@ function playTask(task) {
 function start() {
   //1029032
   //1043593  this one has segment 
-  $.post('https://tasking.eyewire.org/1.0/tasks/testassign').done(playTask);
+  $.post('https://tasking.eyewire.org/1.0/tasks/332/testassign').done(playTask);
 }
 start();
 
@@ -1353,7 +1393,7 @@ var render = (function () {
     // is the camera on the same side as the front of the plane?
     var cameraInFront = cameraToPlane.dot(faceVec) >= 0;
 
-    renderer.render(scene, camera.realCamera, undefined, undefined, cameraInFront, !SegmentManager.transparent);
+    renderer.render(scene, camera.realCamera, undefined, undefined, cameraInFront);
   }
 }());
 
