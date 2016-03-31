@@ -1,4 +1,4 @@
-importScripts('/asm/marching_cubes.js');
+importScripts('./asm/marching_cubes.js');
 
 var marchingCubes = Module.cwrap(
   'marching_cubes', 'number', ['number', 'number']
