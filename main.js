@@ -953,7 +953,7 @@ controls.rotateSpeed = 4.0;
   // controls.dynamicDampingFactor = 0.5;
 
 var axis = new THREE.AxisHelper( 2 );
-cube.add(axis);
+// cube.add(axis);
 
 // for debug
 var checkPointsContainer = new THREE.Object3D();
@@ -1058,143 +1058,6 @@ planeGeo.faceVertexUvs[0][11] = [new THREE.Vector2(1, 0), new THREE.Vector2(0, 0
 
 TileManager.setPlane(0);
 
-///////////////////////////////////////////////////////////////////////////////
-/// loading 3d mesh data
-
-// loads the mesh for the given segment in the given volume. Calls the done handler
-// when the mesh is ready for display. If the mesh is selected or is a seed, it
-// displays the segment.
-function displayMeshForVolumeAndSegId(volume, segId, done) {
-  var doneWrapper = function () {
-    if (done) {
-      done();
-    }
-    needsRender = true;
-  };
-
-  if (SegmentManager.loaded(segId)) {
-    SegmentManager.displayMesh(segId);
-    doneWrapper();
-  } else {
-    var count = CHUNKS.length; // ensure that we have a response for each chunk
-
-
-    var chunkBinaryData = [];
-    var totalLength = 0;
-    var lengths = [];
-
-    CHUNKS.forEach(function(chunk, idx) {
-      getDataForVolumeXYZAndSegId(volume, chunk, segId, function (data) {
-        
-        count--;
-        if (data) {
-          chunkBinaryData[idx] = data;
-          totalLength += data.length;
-          lengths[idx] = data.length;
-        } else {
-          chunkBinaryData[idx] = undefined;
-          lengths[idx] = 0;
-        }
-        if (count === 0) {
-          console.log('done loading mesh');
-
-          var allData = new Float32Array(totalLength);
-
-          var currentLength = 0;
-
-          for (var i = 0; i < chunkBinaryData.length; i++) {
-            var chunk = chunkBinaryData[i];
-
-            if (chunk !== undefined) {
-              allData.set(chunk, currentLength);
-              currentLength += lengths[i];
-            }
-          };
-
-          console.log('totalLength', totalLength, lengths);
-
-          var color = SegmentManager.isSeed(segId) ? "rgb(0, 104, 242)" : "rgb(40, 205, 255)";
-          var shader = $.extend(true, {
-            transparent: true
-          }, Shaders.idPacked);
-          {
-            var u = shader.uniforms;
-            u.color.value = new THREE.Color(color);
-            u.segid.value = segId;
-            u.mode.value = 0;
-          }
-
-          var material = new THREE.ShaderMaterial(shader);
-
-          // var material = new THREE.MeshPhongMaterial({ color: 0x0000ff});//, shading: THREE.FlatShading });
-
-          material.transparent = false;
-
-          var segmentMesh = new THREE.Segment(
-            allData,
-            lengths,
-            material
-          );
-
-          segmentMesh.segId = segId;
-          segmentMesh.name = "segId " + segId;
-
-          SegmentManager.addMesh(segId, segmentMesh);
-
-          if (SegmentManager.isSelected(segId) || SegmentManager.isSeed(segId)) {
-            SegmentManager.displayMesh(segId);
-          } else {
-            console.log('not adding mesh');
-          }
-
-          doneWrapper();
-        }
-      });
-    });
-  }
-}
-
-
-
-// loads the VOA mesh for the given segment in the given chunk from the EyeWire data server into a Three JS mesh.
-// passes the mesh to the done handler as a single argument or passes false if there is no mesh for the given segment in the chunk
-function getDataForVolumeXYZAndSegId(volume, chunk, segId, done) {
-  var meshUrl = 'http://cache.eyewire.org/volume/' + volume + '/chunk/0/'+ chunk[0] + '/' + chunk[1] + '/' + chunk[2] + '/mesh/' + segId;
-
-  var req = new XMLHttpRequest();
-  req.open("GET", meshUrl, true);
-  req.responseType = "arraybuffer";
-
-  req.onload = function (event) {
-    var data = req.response;
-
-    if (data) {
-      done(new Float32Array(data));
-    } else {
-      done(false);
-    }
-  };
-
-  req.send();
-}
-
-
-// start game
-// waits for all async functions to call a ca
-function waitForAll(asyncFunctions, done) {
-  var count = asyncFunctions.length;
-
-  asyncFunctions.forEach(function (f) {
-    f(function () {
-      count--;
-
-      if (count === 0) {
-        done();
-      }
-    });
-  });
-}
-
 var loadedStartingTile = false;
 var tileLoadingQueue = [];
 
@@ -1236,22 +1099,6 @@ function loadTiles(done) {
       done();
     }
   });
-
-  // loadTilesForAxis(1, startingTile, function (tile) {
-  //   tileCount++;
-
-  //   if (tileCount === CUBE_SIZE) {
-  //     done();
-  //   }
-  // });
-
-  // loadTilesForAxis(2, startingTile, function (tile) {
-  //   tileCount++;
-
-  //   if (tileCount === CUBE_SIZE) {
-  //     done();
-  //   }
-  // });
 
   needsRender = true;
 }
@@ -1653,7 +1500,5 @@ function animate() {
   requestAnimationFrame(animate); // TODO where should this go in the function (beginning, end?)
 }
 requestAnimationFrame(animate);
-
-// drawVoxelSegment(3328);
 
 }(window))
