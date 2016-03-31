@@ -1,6 +1,8 @@
 (function (window) {
 "use strict";
 
+var MCWorker = new Worker('mc_worker.js');
+
 var geometry2 = new THREE.BufferGeometry();
 
 var vertexPositions2 = [
@@ -49,13 +51,6 @@ var onOff = new Uint8Array(256 * 256 * 256);
 
 var voxelNormal = new Int8Array(256 * 256 * 256 * 3);
 
-var pixelToSegIdPtr;
-
-var marchingCubes = Module.cwrap(
-  'marching_cubes', 'number', ['number', 'number']
-);
-
-
 var CHUNKS = [
   [0,0,0],
   [1,0,0],
@@ -67,11 +62,8 @@ var CHUNKS = [
   [1,1,1]
 ];
 
-function setupAsm() {
-  var whatIsThis = Module._malloc(pixelToSegId.byteLength);
-  var dataHeap = new Uint8Array(Module.HEAPU8.buffer, whatIsThis, pixelToSegId.byteLength);
-  dataHeap.set(new Uint8Array(pixelToSegId.buffer));
-  pixelToSegIdPtr = dataHeap.byteOffset;
+function setupWorker() {
+  MCWorker.postMessage({ name: 'volume', data: pixelToSegId });
 }
 
 // loads all task data and calls done handler when both are complete
@@ -85,16 +77,11 @@ function playTask(task, cb) {
 
   function loadTaskData(done) {
     loadTiles(function () {
-      setupAsm();
+      setupWorker();
 
       loadSeedMeshes();
       done();
     })
-
-    // waitForAll([
-    //   // loadSeedMeshes,
-    //   loadTiles
-    // ], done);
   }
 
   loadTaskData(cb);
@@ -310,28 +297,33 @@ var SegmentsProxy = {
   }
 }
 
-function generateGeoForSegmentASM(segId) {
-  var meshPtr = marchingCubes(segId, pixelToSegIdPtr);
+function workerGenerateMesh(segId) {
+  MCWorker.postMessage({ name: 'segId', data: segId });
+}
 
-  var arrSize = new Float32Array(Module.HEAPU8.buffer, meshPtr, 1)[0];
 
-  var positions = new Float32Array(Module.HEAPU8.buffer, meshPtr + 4, arrSize);
-  var normals = new Float32Array(Module.HEAPU8.buffer, meshPtr + 4 + arrSize * 4, arrSize);
-
-  Module._free(meshPtr);
+MCWorker.onmessage = function (e) {
+  var segId = e.data[0];
+  var positions = new Float32Array(e.data[1]);
+  var normals = new Float32Array(e.data[2]);
 
   var segGeo = new THREE.BufferGeometry();
   segGeo.addAttribute('position', new THREE.BufferAttribute(positions, 3));
   segGeo.addAttribute('normal', new THREE.BufferAttribute(normals, 3));
   segGeo.normalizeNormals();
 
-  return segGeo;
+  var segMesh = generateMeshForSegment(segId, segGeo);
 
+  SegmentManager.addMesh(segId, segMesh);
+
+  if (SegmentManager.isSelected(segId) || SegmentManager.isSeed(segId)) {
+    SegmentManager.displayMesh(segId);
+  } else {
+    console.log('not adding mesh');
+  }
 }
 
-function generateMeshForSegment(segId) {
-  var segGeo = generateGeoForSegmentASM(segId);
-
+function generateMeshForSegment(segId, segGeo) {
   var color = SegmentManager.isSeed(segId) ? "rgb(0, 104, 242)" : "rgb(40, 205, 255)";
   var shader = $.extend(true, {
     transparent: true,
@@ -409,9 +401,7 @@ var SegmentManager = {
 
     function loadSeedMeshes() {
       _this.seeds.forEach(function (segId) {
-        _this.addMesh(segId, generateMeshForSegment(segId));
-        _this.displayMesh(segId);
-        needsRender = true;
+        workerGenerateMesh(segId);
       });
     }
 
@@ -454,18 +444,7 @@ var SegmentManager = {
       return;
     }
     this.selected.push(segId);
-    // console.log('new select', segId, this.selected);
-    // this.selectedColors.push(segIdToRGB(segId));
-    // TileManager.currentTile().draw();
-    // needsRender = true;
-
-    // if (!this.meshes[segId]) {
-      this.addMesh(segId, generateMeshForSegment(segId));
-    // }
-
-    this.displayMesh(segId);
-
-    needsRender = true;
+    workerGenerateMesh(segId);
   },
 
   deselectSegId: function (segId) {
@@ -521,6 +500,7 @@ var SegmentManager = {
   },
   displayMesh: function (segId) {
     segments.add(this.meshes[segId]);
+    needsRender = true;
   },
   addMesh: function (segId, mesh) {
     this.meshes[segId] = mesh;
@@ -1675,6 +1655,5 @@ function animate() {
 requestAnimationFrame(animate);
 
 // drawVoxelSegment(3328);
-
 
 }(window))
