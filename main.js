@@ -27,8 +27,8 @@ var mesh2 = new THREE.Mesh( geometry2, material2 );
 
 
 // constants
-var CHUNK_SIZE = 128;
-var CUBE_SIZE = 256;
+window.CHUNK_SIZE = 128;
+window.CUBE_SIZE = 256;
 
 // globals
 var assignedTask = null;
@@ -41,15 +41,7 @@ var stagingCanvas = document.createElement('canvas');
 stagingCanvas.height = stagingCanvas.width = CUBE_SIZE;
 var stagingContext = stagingCanvas.getContext('2d');
 
-// var bigByteBuffer = new ArrayBuffer(256 * 256 * 256 * 4);
 var pixelToSegId = new Int16Array(256 * 256 * 256);
-
-var byteBuffer = new ArrayBuffer(256 * 256 * 256);
-var counts = new Uint8Array(byteBuffer);
-
-var onOff = new Uint8Array(256 * 256 * 256);
-
-var voxelNormal = new Int8Array(256 * 256 * 256 * 3);
 
 var CHUNKS = [
   [0,0,0],
@@ -326,8 +318,8 @@ MCWorker.onmessage = function (e) {
 function generateMeshForSegment(segId, segGeo) {
   var color = SegmentManager.isSeed(segId) ? "rgb(0, 104, 242)" : "rgb(40, 205, 255)";
   var shader = $.extend(true, {
-    transparent: true,
-    side: THREE.DoubleSide
+    transparent: false,
+    // side: THREE.DoubleSide
   }, Shaders.idPacked);
   
   var u = shader.uniforms;
@@ -415,7 +407,6 @@ var SegmentManager = {
     return this.selected.indexOf(segId) !== -1;
   },
   hoverSegId: function (segId, startingTile) {
-    return;
     if (segId === this.hover) {
       return;
     }
@@ -432,7 +423,7 @@ var SegmentManager = {
     // }
 
     if (segId !== null) {
-      drawVoxelSegment(segId);
+      drawVoxelSegment(segId, pixelToSegId);
     }
 
     // particleGeo.verticesNeedUpdate = true;
@@ -912,36 +903,9 @@ cubeContents.add(segments);
 // cubeContents.add(hoverContainer);
 
 // particle system
+var pSystem = particleInit();
 
-var sprite = THREE.ImageUtils.loadTexture( "./circle2.png" );
-
-
-var particleGeo = new THREE.Geometry();
-
-var maxVoxelCount = 100000;
-
-for (var i = maxVoxelCount - 1; i >= 0; --i) {
-  particleGeo.vertices.push(new THREE.Vector3(-1000, -1000, -1000));
-}
-
-var pMaterial = new THREE.PointsMaterial({
-      color: 0xFFFF00,
-      size: 0.001,
-      transparent: true,// this doesn't seem to have an affect, maybe it is always on?
-      opacity: 1,
-      sizeAttenuation: true,
-      map: sprite,
-      // alphaTest: 0.7,
-      blending: THREE.AdditiveBlending,
-      // depthTest: false
-      depthWrite: false
-});
-
-var pSystem = new THREE.Points(particleGeo, pMaterial);
-pSystem.frustumCulled = false;
 cubeContents.add(pSystem);
-
-
 
 
 // end of particle system
@@ -1148,6 +1112,12 @@ function mousemove (event) {
 
   if (!mouseStart) {
     selectNeighboringSegment(true);
+  } else {
+    if (key('ctrl', HELD)) {
+      checkForSegmentClick(event.clientX, event.clientY);
+    } else if (key('alt', HELD)) {
+      selectNeighboringSegment();
+    }
   }
 }
 
@@ -1318,9 +1288,10 @@ function checkForSegmentClick(x, y) {
   wireframe.visible = false;
   var cPlane = TileManager.getPlane();
   cPlane.plane.visible = false;
+  var visible = pSystem.visible;
   pSystem.visible = false;
   var ids = ThreeDView.readBuffer(x, y, 1, renderer, scene, camera.realCamera, segments, 'segid');
-  pSystem.visible = true;
+  pSystem.visible = visible;
   cPlane.plane.visible = true;
   wireframe.visible = true;
   

@@ -133,7 +133,7 @@ ThreeDView.readBuffer = function (x, y, size, _renderer, _scene, _camera, _segme
   ///////
 
   var ctx = _renderer.getContext();
-  ctx.disable(ctx.BLEND);
+  // ctx.disable(ctx.BLEND); // this causes weird errors when the segment material transparent = false
 
   _renderer.render(_scene, _camera, _renderTarget, true);
   
@@ -168,7 +168,7 @@ ThreeDView.readBuffer = function (x, y, size, _renderer, _scene, _camera, _segme
     _segments.traverse(setMode(0));
   }
 
-  ctx.enable(ctx.BLEND);
+  // ctx.enable(ctx.BLEND); // this causes weird errors when the segment material transparent = false
   
   return vals;
 };

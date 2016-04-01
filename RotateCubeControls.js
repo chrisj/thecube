@@ -126,7 +126,7 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 		event.stopPropagation();
 
 		if ( _state === STATE.NONE ) {
-			if (event.button === 0 && !key("ctrl", HELD)) {
+			if (event.button === 0 && !key("ctrl", HELD) && !key("alt", HELD)) {
 				console.log('rotating!');
 				_state = STATE.ROTATE;
 			}
