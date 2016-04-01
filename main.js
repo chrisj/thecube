@@ -310,6 +310,7 @@ MCWorker.onmessage = function (e) {
 
   if (SegmentManager.isSelected(segId) || SegmentManager.isSeed(segId)) {
     SegmentManager.displayMesh(segId);
+    SegmentManager.meshes[segId - 1].material.uniforms.opacity.value = 0.2;
   } else {
     console.log('not adding mesh');
   }
@@ -318,7 +319,7 @@ MCWorker.onmessage = function (e) {
 function generateMeshForSegment(segId, segGeo) {
   var color = SegmentManager.isSeed(segId) ? "rgb(0, 104, 242)" : "rgb(40, 205, 255)";
   var shader = $.extend(true, {
-    transparent: false,
+    transparent: true
     // side: THREE.DoubleSide
   }, Shaders.idPacked);
   
@@ -1399,10 +1400,32 @@ function resetZoom() {
   animateToPositionAndZoom(new THREE.Vector3(0, 0, 0), 1, true);
 }
 
+
+function showAllSegs() {
+  if (showAllSegs.started) {
+    return;
+  }
+  showAllSegs.started = true;
+
+  var segCount = -1;
+
+  for (var i = 0; i < pixelToSegId.length; i++) {
+    segCount = Math.max(segCount, pixelToSegId[i]);
+  }
+
+  for (var i = 1; i < segCount; i++) {
+    SegmentManager.selectSegId(i);
+  }
+}
+ 
 function handleInput() {
   // if (key('x', PRESSED)) {
   //   resetZoom();
   // }
+
+  if (key('f', PRESSED)) {
+    showAllSegs();
+  }
   
   if (key('ctrl', PRESSED)) {
     pSystem.visible = false;
