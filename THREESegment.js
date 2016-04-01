@@ -119,6 +119,9 @@ _depthMaterial.blending = 0;
  * Return: computed value (int)
  */
 ThreeDView.readBuffer = function (x, y, size, _renderer, _scene, _camera, _segments, type) {
+  x = x * window.window.devicePixelRatio;
+  y = y * window.window.devicePixelRatio;
+
   _renderTarget = ThreeDView._renderTarget;
 
   if (type === 'depth') {

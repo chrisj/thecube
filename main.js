@@ -799,11 +799,8 @@ var renderer = new THREE.WebGLRenderer({
 // renderer.state.setDepthTest(false); // TODO, why did we do this?
 
 renderer.setPixelRatio(window.devicePixelRatio);
-renderer.setSize(window.innerWidth, window.innerHeight);
-ThreeDView.setSize(window.innerWidth, window.innerHeight);
 
 var scene = new THREE.Scene();
-
 // scene.fog = new THREE.Fog( 0x000000, 0.5 );
 
 var webGLContainer = document.getElementById('webGLContainer');//$('#webGLContainer');
@@ -1361,6 +1358,7 @@ function onWindowResize() {
 
   ThreeDView.setSize(window.innerWidth, window.innerHeight);
 }
+onWindowResize();
 window.addEventListener( 'resize', onWindowResize, false );
 
 
