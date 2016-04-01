@@ -29,7 +29,7 @@ function particleInit() {
   var pSystem = new THREE.Points(particleGeo, pMaterial);
   pSystem.frustumCulled = false;
 
-  pSystem.renderOrder = 1;
+  pSystem.renderOrder = 10000;
 
   return pSystem;
 }

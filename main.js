@@ -306,6 +306,8 @@ MCWorker.onmessage = function (e) {
 
   var segMesh = generateMeshForSegment(segId, segGeo);
 
+  segMesh.renderOrder = 10000 - segId;
+
   SegmentManager.addMesh(segId, segMesh);
 
   if (SegmentManager.isSelected(segId) || SegmentManager.isSeed(segId)) {
