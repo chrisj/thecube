@@ -25,7 +25,6 @@ var material2 = new THREE.MeshBasicMaterial( { color: 0xff0000 } );
 var mesh2 = new THREE.Mesh( geometry2, material2 );
 
 
-
 // constants
 window.CHUNK_SIZE = 128;
 window.CUBE_SIZE = 256;
@@ -43,6 +42,8 @@ var stagingContext = stagingCanvas.getContext('2d');
 
 var pixelToSegId = new Int16Array(256 * 256 * 256);
 
+var segSize = [];
+
 var CHUNKS = [
   [0,0,0],
   [1,0,0],
@@ -58,8 +59,13 @@ function setupWorker() {
   MCWorker.postMessage({ name: 'volume', data: pixelToSegId });
 }
 
+var doneLoading = false;
+
 // loads all task data and calls done handler when both are complete
 function playTask(task, cb) {
+  doneLoading = false;
+  twirl();
+
   assignedTask = task;
 
   resetZoom();
@@ -72,6 +78,7 @@ function playTask(task, cb) {
       setupWorker();
 
       loadSeedMeshes();
+      doneLoading = true;
       done();
     })
   }
@@ -111,6 +118,7 @@ function assign(taskId, done) {
       playTask(task, done);
   });
 }
+//1228475 black spill
 assign(332, function () {
   console.log('loaded first cube');
 
@@ -122,10 +130,6 @@ assign(332, function () {
 
 function clamp(val, min, max) {
   return Math.max(Math.min(val, max), min);
-}
-
-function rgbEqual(rgb1, rgb2) {
-  return rgb1[0] === rgb2[0] && rgb1[1] === rgb2[1] && rgb1[2] === rgb2[2];
 }
 
 function rgbToSegId(rgb) {
@@ -289,37 +293,95 @@ var SegmentsProxy = {
   }
 }
 
-function workerGenerateMesh(segId) {
-  MCWorker.postMessage({ name: 'segId', data: segId });
+function workerGenerateMesh(segId, wireframe) {
+  MCWorker.postMessage({ name: 'segId', wireframe: wireframe, data: segId });
 }
 
+
+var prevHover;
 
 MCWorker.onmessage = function (e) {
   var segId = e.data[0];
-  var positions = new Float32Array(e.data[1]);
-  var normals = new Float32Array(e.data[2]);
+  var wireframe = e.data[1];
+  var positions = new Float32Array(e.data[2]);
+  
+
+  console.log('got', segId);
 
   var segGeo = new THREE.BufferGeometry();
   segGeo.addAttribute('position', new THREE.BufferAttribute(positions, 3));
-  segGeo.addAttribute('normal', new THREE.BufferAttribute(normals, 3));
-  segGeo.normalizeNormals();
 
-  var segMesh = generateMeshForSegment(segId, segGeo);
+  if (!wireframe) {
+    var normals = new Float32Array(e.data[3]);
+    segGeo.addAttribute('normal', new THREE.BufferAttribute(normals, 3));
+    segGeo.normalizeNormals();
+  }
 
-  segMesh.renderOrder = 10000 - segId;
-
-  SegmentManager.addMesh(segId, segMesh);
+  // segMesh.renderOrder = 10000 - segId;
 
   if (SegmentManager.isSelected(segId) || SegmentManager.isSeed(segId)) {
+    var segMesh = generateMeshForSegment(segId, segGeo);
+
+    SegmentManager.addMesh(segId, segMesh);
+
     SegmentManager.displayMesh(segId);
-    SegmentManager.meshes[segId - 1].material.uniforms.opacity.value = 0.2;
+    // SegmentManager.segments[segId - 1].mesh.material.uniforms.opacity.value = 0.2;
   } else {
-    console.log('not adding mesh');
+    var segMesh = generateWireframeForSegment(segId, segGeo);
+    SegmentManager.addMesh(segId, segMesh);
+
+    if (prevHover !== undefined) {
+      SegmentManager.hideMesh(prevHover);
+    }
+
+    prevHover = segId;
+
+    // segMesh.material.uniforms.opacity.value = 0.5;
+    SegmentManager.displayMesh(segId);
   }
 }
 
+function generateWireframeForSegment(segId, segGeo) {
+  // TODO: Bring back quads
+  var vectors = [
+    new THREE.Vector3( 1, 0, 0 ),
+    new THREE.Vector3( 0, 1, 0 ),
+    new THREE.Vector3( 0, 0, 1 )
+  ];
+
+  var position = segGeo.attributes.position;
+  var centers = new Float32Array( position.count * 3 );
+
+  for ( var i = 0, l = position.count; i < l; i ++ ) {
+
+    vectors[ i % 3 ].toArray( centers, i * 3 );
+
+  }
+
+  segGeo.addAttribute( 'center', new THREE.BufferAttribute( centers, 3 ) );
+
+  var shader = $.extend(true, {
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthTest: false
+  }, Shaders.wireframe);
+  
+  // var u = shader.uniforms;
+  // u.color.value = new THREE.Color(color);
+  var material = new THREE.ShaderMaterial(shader);
+
+  var mesh = new THREE.Mesh(segGeo, material);
+  return mesh;
+  }
+
 function generateMeshForSegment(segId, segGeo) {
   var color = SegmentManager.isSeed(segId) ? "rgb(0, 104, 242)" : "rgb(40, 205, 255)";
+
+
+  if (SegmentManager.segments[segId].multi) {
+    color = "rgb(255, 255, 0)";
+  }
+
   var shader = $.extend(true, {
     transparent: true
     // side: THREE.DoubleSide
@@ -327,9 +389,6 @@ function generateMeshForSegment(segId, segGeo) {
   
   var u = shader.uniforms;
   u.color.value = new THREE.Color(color);
-  u.segid.value = segId;
-  u.mode.value = 0;
-
   var material = new THREE.ShaderMaterial(shader);
 
   var segMesh = new THREE.Mesh(segGeo, material);
@@ -339,7 +398,7 @@ function generateMeshForSegment(segId, segGeo) {
 
 var SegmentManager = {
   // defaults, reset in loadForTask
-  selected: [],
+  segments: {},
   seeds: [],
   // selectedColors: [],
   seedColors: [],
@@ -390,12 +449,13 @@ var SegmentManager = {
     this.meshes = {};
     this.hover = undefined;
 
-    segments.remove.apply(segments, segments.children);
+    // segments.remove.apply(segments, segments.children);
 
     var _this = this;
 
     function loadSeedMeshes() {
       _this.seeds.forEach(function (segId) {
+        _this.segments[segId] = {};
         workerGenerateMesh(segId);
       });
     }
@@ -407,7 +467,10 @@ var SegmentManager = {
     return this.seeds.indexOf(segId) !== -1;
   },
   isSelected: function (segId) {
-    return this.selected.indexOf(segId) !== -1;
+    return this.segments[segId] && this.segments[segId].selected;
+  },
+  isMulti: function (segId) {
+    return this.isSelected(segId) && this.segments[segId].multi;
   },
   hoverSegId: function (segId, startingTile) {
     if (segId === this.hover) {
@@ -415,6 +478,8 @@ var SegmentManager = {
     }
     console.log('hover', segId);
     this.hover = segId;
+
+    this.segments[segId] = this.segments[segId] || {};
 
     // clear current voxels
     // hoverContainer.remove.apply(hoverContainer, hoverContainer.children);
@@ -426,18 +491,27 @@ var SegmentManager = {
     // }
 
     if (segId !== null) {
-      drawVoxelSegment(segId, pixelToSegId);
+      workerGenerateMesh(segId, true);
+      // drawVoxelSegment(segId, pixelToSegId, segSize[segId]);
+    } else {
+      clearHover(); 
     }
 
     // particleGeo.verticesNeedUpdate = true;
 
     needsRender = true;
   },
-  selectSegId: function (segId, cb) {
+  selectSegId: function (segId, cb, multi) {
+    console.log('selectSegId', segId);
+
+    if (multi && segSize[segId] > 5000) {
+      return;
+    }
+
     if (segId === 0 || this.isSelected(segId) || this.isSeed(segId)) {
       return;
     }
-    this.selected.push(segId);
+    this.segments[segId] = { selected: true, cb: cb, multi: !!multi };
     workerGenerateMesh(segId);
   },
 
@@ -445,63 +519,51 @@ var SegmentManager = {
     if (segId === 0 || !this.isSelected(segId)) {
       return;
     }
-    var selectedIdx = this.selected.indexOf(segId);
-    this.selected.splice(selectedIdx, 1);
+
+    this.segments[segId].selected = false;
+
+    // var selectedIdx = this.selected.indexOf(segId);
+    // this.selected.splice(selectedIdx, 1);
     // selectedIdx = this.selectedColors.indexOf(segIdToRGB(segId));
     // this.selectedColors.splice(selectedIdx, 1);
 
     // console.log('deselect', segId, this.selected, this.selectedColors);
 
-    TileManager.currentTile().draw();
-
-
-    var duration = 1000;
-
-    // var indvTweenOut = new TWEEN.Tween(PlaneManager).to({ opacity: 0.8 }, duration).onUpdate(function () {
-    //   needsRender = true;
-    // })
-    // .repeat(1)
-    // .yoyo(true)
-    // .start();
-
-    var segMesh = this.meshes[segId];
+    // TileManager.currentTile().draw();
 
     // temporary
-    segments.remove(segMesh);
-    needsRender = true;
-    return;
-
-    var showSeg = new TWEEN.Tween(SegmentProxy(segId)).to({ opacity: 1.0 }, duration / 2)
-    .onUpdate(function () {
-        needsRender = true;
-    })
-    .repeat(1)
-    .yoyo(true)
-    .start();
-
-
-    var randomX = Math.random() * 8 - 4;
-    var randomY = Math.random() * 8 - 4;
-
-    var launchSeg = new TWEEN.Tween(segMesh.position).to({ x: randomX, y: randomY, z: "-5" }, duration)
-    .easing(TWEEN.Easing.Cubic.In)
-    .onUpdate(function () {
-        needsRender = true;
-    }).onComplete(function () {
-      segments.remove(segMesh);
-      segMesh.position.set(0, 0, 0);
-    }).start();
+    this.hideMesh(segId);
   },
   displayMesh: function (segId) {
-    segments.add(this.meshes[segId]);
+    segments.add(this.segments[segId].mesh);
+    segmentInteraction.add(this.segments[segId].interactiveMesh);
+    needsRender = true;
+  },
+  hideMesh: function (segId) {
+    segments.remove(this.segments[segId].mesh);
+    segmentInteraction.remove(this.segments[segId].interactiveMesh);
     needsRender = true;
   },
   addMesh: function (segId, mesh) {
-    this.meshes[segId] = mesh;
+    mesh.segId = segId;
+    this.segments[segId].mesh = mesh;
+
+
+    var shader = $.extend(true, {}, Shaders.segIdPacked);
+    var u = shader.uniforms.segid.value = segId;
+    var material = new THREE.ShaderMaterial(shader);
+    material.blending = 0;
+    var im = new THREE.Mesh(mesh.geometry, material);
+    im.segId = segId;
+
+    this.segments[segId].interactiveMesh = im;
+
+    var cb = this.segments[segId].cb;
+    if (cb) cb();
   },
-  loaded: function (segId) {
-    return this.meshes[segId] !== undefined;
-  },
+  // loaded: function (segId) {
+  //   return this.meshes[segId] !== undefined;
+  // },
   toggle: function () {
     this._toggleSetting = (this._toggleSetting + 1) % 2;
     this.opacity = this._toggleSetting;
@@ -648,7 +710,14 @@ Tile.prototype.load = function (data, type, x, y, callback) {
         var py = Math.floor(i / CHUNK_SIZE) + y * CHUNK_SIZE;
         var pixel = z * 256 * 256 + py * 256 + px;
 
-        pixelToSegId[pixel] = rgbToSegIdOffset(segPixels, i * 4);
+        var segId = rgbToSegIdOffset(segPixels, i * 4);
+
+        pixelToSegId[pixel] = segId;
+
+        if (!segSize[segId]) {
+          segSize[segId] = 0;
+        }
+        segSize[segId]++;
       }
 
       if (_this.isComplete()) { // all tiles have been loaded
@@ -899,6 +968,10 @@ var segments = new THREE.Object3D();
 segments.name = 'is segacious a word?';
 cubeContents.add(segments);
 
+var segmentInteraction = new THREE.Object3D();
+segmentInteraction.visible = false;
+cubeContents.add(segmentInteraction);
+
 // var hoverContainer = new THREE.Object3D();
 // cubeContents.add(hoverContainer);
 
@@ -912,12 +985,12 @@ cubeContents.add(pSystem);
 
 
 
-var controls = new THREE.RotateCubeControls(pivot, camera, SegmentManager, PlaneManager);
+var controls = new THREE.RotateCubeControls(pivot, cube, camera, SegmentManager, PlaneManager);
 controls.rotateSpeed = 4.0;
   // controls.dynamicDampingFactor = 0.5;
 
 var axis = new THREE.AxisHelper( 2 );
-// cube.add(axis);
+pivot.add(axis);
 
 // for debug
 var checkPointsContainer = new THREE.Object3D();
@@ -1091,6 +1164,8 @@ function mouseup (event) {
   selectNeighboringSegment(true);
 
   if (key('shift', HELD)) {
+    // return;
+    // console.log('disabled')
       var point = screenToCube(mouse);
 
       if (point) {
@@ -1116,7 +1191,8 @@ function mousemove (event) {
     if (key('ctrl', HELD)) {
       checkForSegmentClick(event.clientX, event.clientY);
     } else if (key('alt', HELD)) {
-      selectNeighboringSegment();
+      selectNeighboringSegment(true);
+      selectNeighboringSegment(3);
     }
   }
 }
@@ -1131,14 +1207,17 @@ $(document).stationaryClick(function (event) {
   }
 });
 
+function buildingSegments() {
+  return segmentInteraction.children.filter(function (segMesh) {
+    return !SegmentManager.isMulti(segMesh.segId) && (SegmentManager.isSelected(segMesh.segId) || SegmentManager.isSeed(segMesh.segId)) && SegmentManager.segments[segMesh.segId].interactiveMesh;
+  });
+}
+
 function screenToWorld(mouse) {
   var cX = (mouse.x + 1) / 2 * window.innerWidth; // TODO, this will get screwed up with a resize event
   var cY = (mouse.y - 1) / 2 * window.innerHeight * -1;
 
-  var visible = pSystem.visible;
-  pSystem.visible = false;
-  var depths = ThreeDView.readBuffer(cX, cY, 1, renderer, scene, camera.realCamera, segments, 'depth');
-  pSystem.visible = visible;
+  var depths = ThreeDView.readBuffer(cX, cY, 1, renderer, scene, camera.realCamera, buildingSegments(), 'depth');
 
   var zDepth = depths[0];
 
@@ -1226,8 +1305,14 @@ function selectNeighboringSegment(mock) {
     var tile = TileManager.planes[0].tiles[z];
     var segId = tile.segIdForPosition(x, y);
 
+    if (SegmentManager.isMulti(segId)) {
+      return;
+    }
+
     if (segId !== 0 && !SegmentManager.isSelected(segId) && !SegmentManager.isSeed(segId)) {
-      if (mock) {
+      if (mock === 3) {
+        SegmentManager.selectSegId(segId, function () {}, true)
+      } else if (mock) {
         SegmentManager.hoverSegId(segId, z);
       } else {
         SegmentManager.hoverSegId(segId, z);
@@ -1285,22 +1370,12 @@ function checkForTileClick(event, notHover) {
 }
 
 function checkForSegmentClick(x, y) {
-  wireframe.visible = false;
-  var cPlane = TileManager.getPlane();
-  cPlane.plane.visible = false;
-  var visible = pSystem.visible;
-  pSystem.visible = false;
-  var ids = ThreeDView.readBuffer(x, y, 1, renderer, scene, camera.realCamera, segments, 'segid');
-  pSystem.visible = visible;
-  cPlane.plane.visible = true;
-  wireframe.visible = true;
+  var ids = ThreeDView.readBuffer(x, y, 1, renderer, scene, camera.realCamera, buildingSegments(), 'segid');
   
   for (var i = 0; i < ids.length; i++) {
     var segId = ids[i];
     SegmentManager.deselectSegId(segId);
   };
-
-  
 }
 
 
@@ -1323,14 +1398,27 @@ function tileDelta(delta) {
   }
 }
 
+
+var tVec = new THREE.Vector3();
+
+var tQuat = new THREE.Quaternion();
+
 function mousewheel( event ) {
   event.preventDefault();
   event.stopPropagation();
 
-  if (event.deltaY > 0) {
-    camera.viewHeight /= 19/20;
+  if (key('shift', HELD)) {
+    tVec.set(0, 0, -event.deltaY / 200);
+    tQuat.copy(pivot.quaternion);
+    tQuat.inverse();
+    tVec.applyQuaternion(tQuat);
+    cube.position.add(tVec);
   } else {
-    camera.viewHeight *= 19/20;
+    if (event.deltaY > 0) {
+      camera.viewHeight /= 19/20;
+    } else {
+      camera.viewHeight *= 19/20;
+    }
   }
 
   needsRender = true;
@@ -1426,6 +1514,20 @@ function handleInput() {
   if (key('f', PRESSED)) {
     showAllSegs();
   }
+
+  if (key('alt', RELEASED)) {
+    for (let segId of Object.keys(SegmentManager.segments)) {
+      if (SegmentManager.segments[segId].multi) {
+        SegmentManager.segments[segId].multi = false;
+
+        if (SegmentManager.segments[segId].mesh) {
+          SegmentManager.segments[segId].mesh.material.uniforms.color.value = new THREE.Color("rgb(40, 205, 255)");
+        }
+      }
+    }
+
+    needsRender = true;
+  }
   
   if (key('ctrl', PRESSED)) {
     pSystem.visible = false;
@@ -1478,6 +1580,14 @@ function handleInput() {
 
 
 var needsRender = true;
+
+function twirl() {
+  pivot.rotation.y += 0.02;
+
+  if (!doneLoading) {
+    requestAnimationFrame(twirl);
+  }
+}
 
 function animate() {
   pollInput();

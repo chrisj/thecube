@@ -3,10 +3,10 @@
  * @author Mark Lundin 	/ http://mark-lundin.com
  */
 
-THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManager) { // EWWWW
+THREE.RotateCubeControls = function (object, cube, camera, SegmentManager, PlaneManager) { // EWWWW
 
 	var _this = this;
-	var STATE = { NONE: 1, ROTATE: 2, ANIMATE: 3};
+	var STATE = { NONE: 1, ROTATE: 2, ANIMATE: 3, PAN: 4};
 
 	this.object = object;
 
@@ -15,6 +15,7 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 	this.screen = { left: 0, top: 0, width: 0, height: 0 };
 
 	this.rotateSpeed = 1.0;
+	this.panSpeed = 0.3;
 
 	// this.staticMoving = false;
 	this.dynamicDampingFactor = 0.2;
@@ -25,7 +26,10 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 	// _prevState = STATE.NONE,
 
 	_mouseStart = new THREE.Vector2(),
-	_mouseEnd = new THREE.Vector2();
+	_mouseEnd = new THREE.Vector2(),
+
+	_panStart = new THREE.Vector2(),
+	_panEnd = new THREE.Vector2();
 
 	// events
 
@@ -103,12 +107,74 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 
 	}());
 
+	this.panCamera = (function() {
+		var mouseChange = new THREE.Vector3(),
+			objectUp = new THREE.Vector3(),
+			pan = new THREE.Vector3();
+
+
+		var objRotation = new THREE.Quaternion();
+
+		return function panCamera() {
+			mouseChange.copy( _panEnd ).sub( _panStart );
+
+			mouseChange.z = 0;
+
+			// console.log(mouseChange.lengthSq());
+
+			if ( mouseChange.lengthSq() ) {
+
+				// mouseChange.multiplyScalar();
+
+				// console.log(mouseChange);
+			// 	mouseChange.multiplyScalar( _eye.length() * _this.panSpeed );
+
+				// pan.copy( _eye ).cross( _this.object.up ).setLength( mouseChange.x );
+				// pan.add( objectUp.copy( _this.object.up ).setLength( mouseChange.y ) );
+
+			// 	_this.object.position.add( pan );
+			// 	_this.target.add( pan );
+
+
+				// pan.copy()
+
+				objRotation.copy(_this.object.quaternion);
+
+				objRotation.inverse();
+
+				mouseChange.multiplyScalar(camera.viewHeight / 2);
+
+				mouseChange.applyQuaternion(objRotation);
+
+
+				cube.position.add(mouseChange);
+
+				_this.dispatchEvent(changeEvent);
+
+
+			// 	if ( _this.staticMoving ) {
+					_panStart.copy( _panEnd );
+			// 	} else {
+			// 		_panStart.add( mouseChange.subVectors( _panEnd, _panStart ).multiplyScalar( _this.dynamicDampingFactor ) );
+			// 	}
+
+			}
+
+		};
+
+	}());
+
 	var prevQuat = _this.object.quaternion.clone();
 
 	this.update = function () {
+		// if (key("SHIFT", RELEASED)
+
+
 		if (_state !== STATE.ANIMATE) {
 			_this.rotateObject(); // TODO, should ignore input as well
 		}
+
+		_this.panCamera();
 
 		if (!_this.object.quaternion.equals(prevQuat)) {
 			prevQuat.copy(_this.object.quaternion);
@@ -126,7 +192,9 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 		event.stopPropagation();
 
 		if ( _state === STATE.NONE ) {
-			if (event.button === 0 && !key("ctrl", HELD) && !key("alt", HELD)) {
+			if (key("shift", HELD)) {
+				_state = STATE.PAN;
+			} else if (event.button === 0 && !key("ctrl", HELD) && !key("alt", HELD)) {
 				console.log('rotating!');
 				_state = STATE.ROTATE;
 			}
@@ -137,6 +205,9 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 
 			_mouseStart.copy(mousePosition);
 			_mouseEnd.copy(mousePosition );
+		} else if (_state === STATE.PAN) {
+			_panStart.copy( getMouseOnScreen( event.pageX, event.pageY ) );
+			_panEnd.copy( _panStart );
 		}
 
 		document.addEventListener( 'mousemove', mousemove, false );
@@ -149,7 +220,6 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 	var lastEvent = null;
 
 	function mousemove( event ) {
-
 		event.preventDefault();
 		event.stopPropagation();
 
@@ -159,6 +229,8 @@ THREE.RotateCubeControls = function (object, camera, SegmentManager, PlaneManage
 			var ballPosition = getMouseOnScreen(event.pageX, event.pageY);
 			_state === STATE.ROTATE;
 			_mouseEnd.copy(ballPosition);
+		} else if (_state === STATE.PAN) {
+			_panEnd.copy( getMouseOnScreen( event.pageX, event.pageY ) );
 		}
 
 	}

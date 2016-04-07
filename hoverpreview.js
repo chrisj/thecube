@@ -2,9 +2,11 @@ var counts = new Int8Array(256 * 256 * 256);
 
 var particleGeo = new THREE.Geometry();
 
-var maxVoxelCount = 100000;
+var maxVoxelCount = 200000;
 
 var lastHoverCount = 0;
+
+var pSystem;
 
 function particleInit() {
   for (var i = maxVoxelCount - 1; i >= 0; --i) {
@@ -15,18 +17,18 @@ function particleInit() {
 
   var pMaterial = new THREE.PointsMaterial({
       color: 0xFFFF00,
-      size: 0.008,
+      size: 0.005,
       transparent: true,// this doesn't seem to have an affect, maybe it is always on?
-      opacity: 0.5,
+      opacity: 1.0,
       sizeAttenuation: true,
       map: sprite,
       // alphaTest: 0.7,
-      blending: THREE.AdditiveBlending,
+      // blending: THREE.AdditiveBlending,
       // depthTest: false,
       depthWrite: false
   });
 
-  var pSystem = new THREE.Points(particleGeo, pMaterial);
+  pSystem = new THREE.Points(particleGeo, pMaterial);
   pSystem.frustumCulled = false;
 
   pSystem.renderOrder = 10000;
@@ -34,8 +36,29 @@ function particleInit() {
   return pSystem;
 }
 
-function drawVoxelSegment(segId, pixelToSegId) {
+function clearHover(start) {
+  start = start || 0; 
+  for (var i = start; i < lastHoverCount; i++) {
+      particleGeo.vertices[i].set(-1000, -1000, -1000);
+  };
+
+  lastHoverCount = start + 1;
+
+  particleGeo.verticesNeedUpdate = true;
+}
+
+function drawVoxelSegment(segId, pixelToSegId, segSize) {
   var voxels = [];
+
+  // pSystem.material.size = 0.005 + 0.005 * ((15 - Math.log(segSize)) / 7);
+
+  if (segSize < 5000) {
+    pSystem.material.color = new THREE.Color(0x00FF00);
+  } else {
+    pSystem.material.color = new THREE.Color(0xFFFF00);
+  }
+
+  // console.log('opacity', opacity);
 
   var start = window.performance.now();
 
@@ -57,7 +80,7 @@ function drawVoxelSegment(segId, pixelToSegId) {
     }
   }
 
-  var offsetMul = 1 / (CUBE_SIZE * 8);
+  var offsetMul = 1 / (CUBE_SIZE * 4);
 
   var voxelCount = 0;
   var potentialCount = voxels.length;
@@ -91,11 +114,5 @@ function drawVoxelSegment(segId, pixelToSegId) {
 
   console.log('time', end - start);//, numTiles, (end - start) / numTiles);
 
-  for (var i = voxelCount - 1; i < lastHoverCount; i++) {
-      particleGeo.vertices[i].set(-1000, -1000, -1000);
-  };
-
-  lastHoverCount = voxelCount;
-
-  particleGeo.verticesNeedUpdate = true;
+  clearHover(voxelCount - 1);
 }

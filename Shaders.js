@@ -15,33 +15,88 @@ Shaders = {
 	 */
 	depthPacked: {
 		uniforms: {},
-		vertexShader: [
-			"void main() {",
-				"vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);",
-				"gl_Position = projectionMatrix * mvPosition;",
-			"}"
-		].join("\n"),
+		vertexShader:
+			`void main() {
+				vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+				gl_Position = projectionMatrix * mvPosition;
+			}`,
 
-		fragmentShader: [
-			"vec4 pack_depth(const in highp float depth) {",
-				"const highp vec4 bit_shift = vec4(256.0, 256.0*256.0, 256.0*256.0*256.0, 256.0*256.0*256.0*256.0);",
-				"vec4 res = depth * bit_shift;",
-				"res.x = min(res.x + 1.0, 255.0);",
-				"return fract(floor(res) / 256.0);",
-			"}",
+		fragmentShader: 
+			`vec4 pack_depth(const in highp float depth) {
+				const highp vec4 bit_shift = vec4(256.0, 256.0*256.0, 256.0*256.0*256.0, 256.0*256.0*256.0*256.0);
+				vec4 res = depth * bit_shift;
+				res.x = min(res.x + 1.0, 255.0);
+				return fract(floor(res) / 256.0);
+			}
 
-			"void main() {",
-				"gl_FragData[0] = pack_depth(gl_FragCoord.z);", // Setting color of pixel (aka fragment)
-			"}"
-		].join("\n")
+			void main() {
+				gl_FragData[0] = pack_depth(gl_FragCoord.z); // Setting color of pixel (aka fragment)
+			}`
 	},
+	segIdPacked: {
+		uniforms: {
+			segid: { type: "i", value: 0 },
+		},
+		vertexShader:
+			`void main() {
+				vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+				gl_Position = projectionMatrix * mvPosition;
+			}`,
+
+		fragmentShader:
+		`uniform int segid;
+
+		vec3 pack_int( const in int id ) {
+			const highp vec3 bit_shift = vec3( 256.0 * 256.0, 256.0, 1.0 );
+			float fid = float(id);
+			vec3 res = floor(fid / bit_shift);
+			res = mod(res, 256.0);
+			return (res / 255.0);
+		}
+
+		void main() {
+			gl_FragColor = vec4(pack_int(segid), 1.0);
+		}`
+	},
+
+	wireframe: {
+		derivatives: true,
+		uniforms: {
+
+		},
+		vertexShader: `
+			attribute vec3 center;
+			varying vec3 vCenter;
+
+			void main() {
+
+				vCenter = center;
+				gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+
+			}
+		`,
+		fragmentShader: `
+			varying vec3 vCenter;
+
+			float edgeFactor() {
+
+				vec3 d = fwidth( vCenter );
+				vec3 a3 = smoothstep( vec3( 0.0 ), d * 0.02, vCenter );
+				return min( min( a3.x, a3.y ), a3.z );
+
+			}
+
+			void main() {
+				gl_FragColor.rgb = vec3(1.0, 1.0, 0.0);
+				gl_FragColor.a = (1.0 - edgeFactor()) * 0.5;
+			}
+		`
+	},
+
 	idPacked: {
 		uniforms: {
 			color: { type: "c", value: new THREE.Color( 0xffffff ) },
 			opacity: { type: "f", value: 1.0 },
-			taskid: { type: "i", value: 0 },
-			segid: { type: "i", value: 0 },
-			mode: { type: "i", value: 0 },
 
 			diffuse: { type: "c", value: new THREE.Color( 0xeeeeee ) },
 			ambient: { type: "c", value: new THREE.Color( 0xffffff ) },
@@ -50,81 +105,69 @@ Shaders = {
 			ambientLightColor: { type: "c", value: new THREE.Color( 0x111111 ) },
 		},
 
-		vertexShader: [
-			"varying vec3 vViewPosition;",
-			"varying vec3 vNormal;",
-			"void main() {",
-				"vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );",
+		vertexShader:
+			`varying vec3 vViewPosition;
+			varying vec3 vNormal;
+			varying float isEdge;
 
-				"vViewPosition = -mvPosition.xyz;",
-				"vNormal = normalMatrix * normal;",
+			void main() {
+				vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
 
-				"gl_Position = projectionMatrix * mvPosition;",
-			"}"
-		].join("\n"),
+				vViewPosition = -mvPosition.xyz;
+				vNormal = normalMatrix * normal;
 
-		fragmentShader: [
-			"uniform float tilePosition;",
-			"uniform vec3 color;",
-			"uniform float opacity;",
-			"uniform int taskid;",
-			"uniform int segid;",
-			"uniform int mode;",
+				gl_Position = projectionMatrix * mvPosition;
 
-			"uniform vec3 diffuse;",
-			"uniform vec3 ambient;",
-			"uniform vec3 specular;",
-			"uniform float shininess;",
+				isEdge = float(position.x <= 1.0 / 256.0 || position.x >= 255.0 / 256.0 || position.y <= 1.1 / 256.0 || position.y >= 255.0 / 256.0 || position.z <= 1.0 / 256.0 || position.z >= 255.0 / 256.0);
+			}`,
 
-			"uniform bool clip;",
+		fragmentShader:
+			`uniform float opacity;
+			uniform vec3 diffuse;
+			uniform vec3 ambient;
+			uniform vec3 specular;
+			uniform float shininess;
+			uniform vec3 color;
 
-			"uniform vec3 ambientLightColor;",
+			uniform bool clip;
 
-			"varying vec3 vViewPosition;",
-			"varying vec3 vNormal;",
+			uniform vec3 ambientLightColor;
 
-			"vec3 pack_int( const in int id ) {",
+			varying vec3 vViewPosition;
+			varying vec3 vNormal;
 
-				"const highp vec3 bit_shift = vec3( 256.0 * 256.0, 256.0, 1.0 );",
-				"float fid = float(id);",
-				"vec3 res = floor(fid / bit_shift);",
-				"res = mod(res, 256.0);",
-				"return (res / 255.0);",
+			varying float isEdge;
 
-			"}",
+			void main() {
+				gl_FragColor.a = opacity;
 
-			"void main() {",
-				"if (mode == 1) {",
-					"gl_FragColor = vec4(pack_int(taskid), 1.0);",
-				"} else if (mode == 2) {",
-					"gl_FragColor = vec4(pack_int(segid), 1.0);",
-				"} else {",
-					"gl_FragColor.rgb = color;",
+				if (isEdge == 1.0) {
+					gl_FragColor.rgb = vec3(0.0, 0.0, 0.0);
+				} else {
+					gl_FragColor.rgb = color;
 
-					"vec3 normal = normalize( vNormal );",
-					"vec3 viewPosition = normalize( vViewPosition );",
+					vec3 normal = normalize( vNormal );
+					vec3 viewPosition = normalize( vViewPosition );
 
-					"vec4 lDirection = viewMatrix * vec4( cameraPosition, 0.0 );",
-					"vec3 dirVector = normalize( lDirection.xyz );",
+					vec4 lDirection = viewMatrix * vec4( cameraPosition, 0.0 );
+					vec3 dirVector = normalize( lDirection.xyz );
 
 					// diffuse
 
-					"float dotProduct = dot( normal, dirVector );",
-					"float dirDiffuseWeight = max( dotProduct, 0.0 );",
-					"vec3 dirDiffuse = diffuse * dirDiffuseWeight;",
+					float dotProduct = dot( normal, dirVector );
+					float dirDiffuseWeight = max( dotProduct, 0.0 );
+					vec3 dirDiffuse = diffuse * dirDiffuseWeight;
 
 					// specular
 
-					"vec3 dirHalfVector = normalize( dirVector + viewPosition );",
-					"float dirDotNormalHalf = max( dot( normal, dirHalfVector ), 0.0 );",
-					"float dirSpecularWeight = max( pow( dirDotNormalHalf, shininess ), 0.0 );",
+					vec3 dirHalfVector = normalize( dirVector + viewPosition );
+					float dirDotNormalHalf = max( dot( normal, dirHalfVector ), 0.0 );
+					float dirSpecularWeight = max( pow( dirDotNormalHalf, shininess ), 0.0 );
 
-					"vec3 dirSpecular = specular * dirSpecularWeight * dirDiffuseWeight;",
+					vec3 dirSpecular = specular * dirSpecularWeight * dirDiffuseWeight;
 
-					"gl_FragColor.rgb = gl_FragColor.rgb * ( dirDiffuse + ambientLightColor * ambient ) + dirSpecular;",
-					"gl_FragColor.a = opacity;",
-				"}",
-			"}"
-		].join("\n")
+					gl_FragColor.rgb = gl_FragColor.rgb * ( dirDiffuse + ambientLightColor * ambient ) + dirSpecular;
+				}
+			}`
 	}
 };

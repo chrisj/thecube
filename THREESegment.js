@@ -1,78 +1,3 @@
-THREE.Segment = function (interleavedData, lengths, material) {
-  "use strict";
-
-  var _this = this;
-  var _interleavedData, _webglPositionNormalBuffer;
-
-  THREE.Object3D.call(this);
-  this.interleavedData = interleavedData;
-  this.lengths = lengths;
-  this.type = THREE.Segment;
-  this.material = material;
-
-  this.immediateRenderCallback = function (program, _gl, _frustum) {
-    if (!_webglPositionNormalBuffer) {
-      _webglPositionNormalBuffer = _gl.createBuffer();
-    }
-
-    _gl.bindBuffer(_gl.ARRAY_BUFFER, _webglPositionNormalBuffer);
-    _gl.bufferData(_gl.ARRAY_BUFFER, _this.interleavedData, _gl.STATIC_DRAW);
-
-    _gl.disable(_gl.BLEND);
-
-    // NB: Unintiuitive bug fix. Compiler was optimizing away
-    // the normal attribute in certain builds of firefox and
-    // seemingly randomly returning -1 for the normal attribute
-    // location. Since we have constructed the Vertex Array Object (VAO)
-    // we can explicitly tell the compiler to use it.
-    //
-    // VAO objects have a standard definition, that's an additional
-    // reason why this is safe to do.
-    //
-    // - Will Silversmith, Aug. 2014
-
-    // This was causing problems with our Princeton Ubuntu 14.04 installations.
-    // if (program.attributes.normal === -1) {
-    // 	_gl.bindAttribLocation(program.program, 0, 'position');
-    // 	_gl.bindAttribLocation(program.program, 1, 'normal');
-    // 	program.attributes.position = 0;
-    // 	program.attributes.normal = 1;
-    // }
-
-    // _gl.enableVertexAttribArray(index);
-    _gl.enableVertexAttribArray(program.getAttributes().position);
-
-    if (program.getAttributes().normal !== -1) { // TODO, doing this because of the depth buffer, seems like it isn't a problem with omniweb
-      _gl.enableVertexAttribArray(program.getAttributes().normal);
-      _gl.vertexAttribPointer(program.getAttributes().normal, 3, _gl.FLOAT, false, 24, 12);
-    }
-
-    // _gl.vertexAttribPointer(index, size, type, normalized, stride, pointer)
-    _gl.vertexAttribPointer(program.getAttributes().position, 3, _gl.FLOAT, false, 24, 0);
-
-    // if (program.attributes.normal !== -1) {
-      
-    // }
-
-    // _gl.drawArrays(mode, start, count)
-    // 6 = dimensions per vertex: 3 for position, 3 for normal vector
-
-    var currentLength = 0;
-    for (var i = 0; i < lengths.length; i++) {
-      var l = lengths[i];
-      if (l > 0) {
-        _gl.drawArrays(_gl.TRIANGLE_STRIP, currentLength / 6, l / 6);
-      }
-      currentLength += l;
-    };
-  };
-};
-
-THREE.Segment.prototype = new THREE.Object3D();
-THREE.Segment.prototype.constructor = THREE.Segment;
-
-
-
 ThreeDView = {};
 window.ThreeDView = ThreeDView;
 
@@ -118,16 +43,31 @@ _depthMaterial.blending = 0;
  *
  * Return: computed value (int)
  */
-ThreeDView.readBuffer = function (x, y, size, _renderer, _scene, _camera, _segments, type) {
+ThreeDView.readBuffer = function (x, y, size, _renderer, _scene, _camera, _renderObjects, type) {
   x = x * window.window.devicePixelRatio;
   y = y * window.window.devicePixelRatio;
 
+
+  var priorVisibility = {};
+
   _renderTarget = ThreeDView._renderTarget;
+
+  _scene.traverse(function (obj) {
+    priorVisibility[obj.uuid] = obj.visible;
+    obj.visible = false;
+  });
+
+
+  _renderObjects.forEach(function (renderObject) {
+    renderObject.visible = true;
+    renderObject.traverseAncestors(function (ancestor) {
+      ancestor.visible = true;
+    });
+  });
 
   if (type === 'depth') {
     _scene.overrideMaterial = _depthMaterial;
   } else if (type === 'segid') {
-    _segments.traverse(setMode(2));
   } else {
     console.log('unsupported read buffer type', type);
     return;
@@ -155,8 +95,8 @@ ThreeDView.readBuffer = function (x, y, size, _renderer, _scene, _camera, _segme
     vals = new Float32Array(size * size);
     for (i = 0; i < size * size; i += 1) {
       vals[i] = valsBroken[i * 4] / 256.0 +
-        valsBroken[i * 4 + 1] / (256.0 * 256.0) +
-        valsBroken[i * 4 + 2] / (256.0 * 256.0 * 256.0);
+                valsBroken[i * 4 + 1] / (256.0 * 256.0) +
+                valsBroken[i * 4 + 2] / (256.0 * 256.0 * 256.0);
     }
     
     _scene.overrideMaterial = null;
@@ -164,22 +104,14 @@ ThreeDView.readBuffer = function (x, y, size, _renderer, _scene, _camera, _segme
     vals = new Uint32Array(size * size);
     for (i = 0; i < size * size; i += 1) {
       vals[i] = valsBroken[i * 4] * 256.0 * 256.0 + 
-        valsBroken[i * 4 + 1] * 256.0 +
-        valsBroken[i * 4 + 2];
+                valsBroken[i * 4 + 1] * 256.0 +
+                valsBroken[i * 4 + 2];
     }
-
-    _segments.traverse(setMode(0));
   }
 
-  // ctx.enable(ctx.BLEND); // this causes weird errors when the segment material transparent = false
+  _scene.traverse(function (obj) {
+    obj.visible = priorVisibility[obj.uuid];
+  });
   
   return vals;
 };
-
-function setMode (mode) { 
-  return function (object) {
-    if (object.hasOwnProperty('material')) {
-      object.material.uniforms.mode.value = mode;
-    }
-  };
-}

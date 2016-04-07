@@ -610,6 +610,142 @@ float* marching_cubes(int segId, uint16_t* pixelToSegId) {
 
 	return meshData;
 }
+
+float* marching_cubes_wireframe(int segId, uint16_t* pixelToSegId) {
+	printf("wireframe marching_cubes(%d)\n", segId);
+
+	clock_t verybegin, begin, end;
+
+	verybegin = clock();
+
+	double time_spent;
+
+	begin = clock();
+
+	// faster in asm.js
+	// memset(counts, 0, TOTAL_VOXELS);
+	// faster in c
+	// counts = (unsigned char*)calloc((TOTAL_VOXELS), sizeof(unsigned char));
+
+	end = clock();
+
+	time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
+
+	printf("wireframe memset, time = %fms\n", time_spent);
+
+	int triCount = 0;
+
+	// step 1
+
+	begin = clock();
+
+	for (int i = TOTAL_VOXELS - 1; i >= 0; --i) {
+		if (pixelToSegId[i] == segId) {
+			counts[i                        ] |= 1;
+			counts[i - X_OFF                ] |= 2;
+			counts[i         - Y_OFF        ] |= 16;
+			counts[i - X_OFF - Y_OFF        ] |= 32;
+			counts[i                 - Z_OFF] |= 8;
+			counts[i - X_OFF         - Z_OFF] |= 4;
+			counts[i         - Y_OFF - Z_OFF] |= 128;
+			counts[i - X_OFF - Y_OFF - Z_OFF] |= 64;
+		}
+
+		triCount += triCountTable[counts[i]];
+	}
+
+	end = clock();
+
+	time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
+
+	printf("wireframe march, time = %fms\n", time_spent);
+
+	begin = clock();
+
+	// count vertices, allocate memory
+	
+	int vertexArrCount = triCount * 3 * 3;
+
+	// first element is length of rest of array
+	float *meshData;
+	meshData = (float*)calloc((1 + vertexArrCount), sizeof(float));
+
+	meshData[0] = vertexArrCount;
+
+	float *meshVertices = meshData + 1;
+
+	end = clock();
+
+	time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
+
+	printf("wireframe allocate mesh memory, time = %fms\n", time_spent);
+
+	int startIdx = 0;
+
+	float z;
+	float x;
+	float y;
+	float off_x;
+	float off_y;
+	float off_z;
+
+	uint8_t indvTriCount;
+	uint8_t bufferIdx;
+
+	uint8_t m;
+	uint8_t v;
+
+	int cubeIndex;
+
+	int vox1;
+	int vox2;
+
+	begin = clock();
+
+	for (int i = 0; i < TOTAL_VOXELS; ++i) {
+		cubeIndex = counts[i];
+		counts[i] = 0;
+		indvTriCount = triCountTable[cubeIndex];
+		cubeIndex <<= 4;
+
+		z = floor(i / Z_OFF);
+		y = floor((i - z * Z_OFF) / Y_OFF);
+		x = i % Y_OFF;
+
+		z += 0.5;
+		y += 0.5;
+		x += 0.5;
+
+		for (m = 0; m < indvTriCount; ++m) {
+			for (v = 0; v < 3; ++v) {
+				bufferIdx = triTable[cubeIndex];
+
+				off_x = EDGE_OFFSET_WORLD[bufferIdx * 3];
+				off_y = EDGE_OFFSET_WORLD[bufferIdx * 3 + 1];
+				off_z = EDGE_OFFSET_WORLD[bufferIdx * 3 + 2];
+
+				meshVertices[startIdx]   = (x + off_x) / X_DIM;
+				meshVertices[startIdx+1] = (y + off_y) / Y_DIM;
+				meshVertices[startIdx+2] = (z + off_z) / Z_DIM;
+				cubeIndex++;
+				startIdx += 3;
+			}
+		}
+	}
+
+	end = clock();
+
+	time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
+
+	printf("wireframe triangulate, time = %fms\n", time_spent);
+
+	time_spent = (double)(end - verybegin) * 1000 / CLOCKS_PER_SEC;
+
+	printf("wireframe total, time = %fms, tris = %d\n", time_spent, triCount);
+
+	return meshData;
+}
+
 }
 
 // int main() {
