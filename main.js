@@ -42,7 +42,7 @@ var stagingContext = stagingCanvas.getContext('2d');
 
 var pixelToSegId = new Int16Array(256 * 256 * 256);
 
-var segSize = [];
+var segInfo = {};
 
 var CHUNKS = [
   [0,0,0],
@@ -293,52 +293,44 @@ var SegmentsProxy = {
   }
 }
 
-function workerGenerateMesh(segId, wireframe) {
-  MCWorker.postMessage({ name: 'segId', wireframe: wireframe, data: segId });
+function workerGenerateMesh(segId, wireframe, origin, callback) {
+  var msg = { name: 'segId', wireframe: wireframe, origin: origin, data: segId };
+  if (callback) {
+    var unique = Symbol();
+    MCWorker.callbacks[unique] = callback;
+    msg.callback = unique;
+  }
+  MCWorker.postMessage(msg);
 }
 
 
 var prevHover;
 
-MCWorker.onmessage = function (e) {
-  var segId = e.data[0];
-  var wireframe = e.data[1];
-  var positions = new Float32Array(e.data[2]);
-  
-
-  console.log('got', segId);
+function processMesh(data) {
+  var wireframe = !!data.wireframe;
 
   var segGeo = new THREE.BufferGeometry();
-  segGeo.addAttribute('position', new THREE.BufferAttribute(positions, 3));
+  segGeo.addAttribute('position', new THREE.BufferAttribute(new Float32Array(data.positions), 3));
 
-  if (!wireframe) {
-    var normals = new Float32Array(e.data[3]);
-    segGeo.addAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  if (data.normals) {
+    segGeo.addAttribute('normal', new THREE.BufferAttribute(new Float32Array(data.normals), 3));
     segGeo.normalizeNormals();
   }
 
-  // segMesh.renderOrder = 10000 - segId;
 
-  if (SegmentManager.isSelected(segId) || SegmentManager.isSeed(segId)) {
-    var segMesh = generateMeshForSegment(segId, segGeo);
+  var meshFunc = wireframe ? generateWireframeForSegment : generateMeshForSegment;
 
-    SegmentManager.addMesh(segId, segMesh);
+  var segMesh = meshFunc(data.segId, segGeo);
+  SegmentManager.addMesh(data.segId, segMesh, wireframe);
+  SegmentManager.displayMesh(data.segId, wireframe);
+}
 
-    SegmentManager.displayMesh(segId);
-    // SegmentManager.segments[segId - 1].mesh.material.uniforms.opacity.value = 0.2;
-  } else {
-    var segMesh = generateWireframeForSegment(segId, segGeo);
-    SegmentManager.addMesh(segId, segMesh);
-
-    if (prevHover !== undefined) {
-      SegmentManager.hideMesh(prevHover);
-    }
-
-    prevHover = segId;
-
-    // segMesh.material.uniforms.opacity.value = 0.5;
-    SegmentManager.displayMesh(segId);
+MCWorker.onmessage = function (e) {
+  if (e.data.callback) {
+    MCWorker.callbacks[e.data.callback](e.data);
   }
+
+  processMesh(e.data);
 }
 
 function generateWireframeForSegment(segId, segGeo) {
@@ -363,7 +355,7 @@ function generateWireframeForSegment(segId, segGeo) {
   var shader = $.extend(true, {
     transparent: true,
     side: THREE.DoubleSide,
-    depthTest: false
+    depthWrite: false
   }, Shaders.wireframe);
   
   // var u = shader.uniforms;
@@ -383,7 +375,7 @@ function generateMeshForSegment(segId, segGeo) {
   }
 
   var shader = $.extend(true, {
-    transparent: true
+    transparent: false
     // side: THREE.DoubleSide
   }, Shaders.idPacked);
   
@@ -472,7 +464,16 @@ var SegmentManager = {
   isMulti: function (segId) {
     return this.isSelected(segId) && this.segments[segId].multi;
   },
-  hoverSegId: function (segId, startingTile) {
+  setHoverOrigin: function (origin) {
+    this.hoverOrigin = origin;
+
+    wfSegments.children.map(function (wfSegment) {
+      wfSegment.material.uniforms.origin.value = origin;
+    });
+
+    needsRender = true;
+  },
+  hoverSegId: function (segId, origin) {
     if (segId === this.hover) {
       return;
     }
@@ -491,10 +492,15 @@ var SegmentManager = {
     // }
 
     if (segId !== null) {
-      workerGenerateMesh(segId, true);
+
+      if (this.segments[segId].wireframe) {
+        this.displayMesh(segId, true);
+      } else {
+        workerGenerateMesh(segId, true, origin);
+      }
       // drawVoxelSegment(segId, pixelToSegId, segSize[segId]);
     } else {
-      clearHover(); 
+      // clearHover(); 
     }
 
     // particleGeo.verticesNeedUpdate = true;
@@ -504,14 +510,16 @@ var SegmentManager = {
   selectSegId: function (segId, cb, multi) {
     console.log('selectSegId', segId);
 
-    if (multi && segSize[segId] > 5000) {
+    if (multi && segInfo[segId].size > 5000) {
       return;
     }
 
     if (segId === 0 || this.isSelected(segId) || this.isSeed(segId)) {
       return;
     }
-    this.segments[segId] = { selected: true, cb: cb, multi: !!multi };
+
+    this.segments[segId] = this.segments[segId] || {};
+    Object.assign(this.segments[segId], { selected: true, cb: cb, multi: !!multi });
     workerGenerateMesh(segId);
   },
 
@@ -534,29 +542,85 @@ var SegmentManager = {
     // temporary
     this.hideMesh(segId);
   },
-  displayMesh: function (segId) {
-    segments.add(this.segments[segId].mesh);
-    segmentInteraction.add(this.segments[segId].interactiveMesh);
+  displayMesh: function (segId, wireframe) {
+    if (prevHover !== undefined) {
+      SegmentManager.hideMesh(prevHover, true);
+      prevHover = undefined;
+    }
+
+
+    if (wireframe) {
+      console.log('show', segId);
+      prevHover = segId;
+
+      this.segments[segId].wireframe.material.uniforms.origin.value = this.hoverOrigin;
+
+      if (this.segments[segId].tween) {
+        console.log('stop tween', segId);
+        this.segments[segId].tween.stop();
+      }
+
+      if (wfSegments.children.indexOf(this.segments[segId].wireframe) === -1) {
+        wfSegments.add(this.segments[segId].wireframe);
+      }
+
+      this.segments[segId].tween = new TWEEN.Tween(this.segments[segId].wireframe.material.uniforms.opacity).to({ value: 1}, 150)
+        .onUpdate(function () {
+          needsRender = true;
+        }).start();
+
+
+    } else {
+      segments.add(this.segments[segId].mesh);
+      segmentInteraction.add(this.segments[segId].interactiveMesh);
+    }
+
     needsRender = true;
   },
-  hideMesh: function (segId) {
-    segments.remove(this.segments[segId].mesh);
-    segmentInteraction.remove(this.segments[segId].interactiveMesh);
+  hideMesh: function (segId, wireframe) {
+    if (wireframe) {
+      console.log('hide', segId);
+
+      if (this.segments[segId].tween) {
+        this.segments[segId].tween.stop();
+      }
+
+      var _this = this;
+      this.segments[segId].tween = new TWEEN.Tween(_this.segments[segId].wireframe.material.uniforms.opacity).to({ value: 0}, 150)
+        .onUpdate(function () {
+          needsRender = true;
+        }).onComplete(function () {
+          console.log('oncomplete', segId);
+          wfSegments.remove(_this.segments[segId].wireframe);
+          _this.segments[segId].tween = null;
+        }).start();
+
+
+    } else {
+      segments.remove(this.segments[segId].mesh);
+      segmentInteraction.remove(this.segments[segId].interactiveMesh);
+    }
+
     needsRender = true;
   },
-  addMesh: function (segId, mesh) {
+  addMesh: function (segId, mesh, wireframe) {
     mesh.segId = segId;
-    this.segments[segId].mesh = mesh;
 
+    if (wireframe) {
+      this.segments[segId].wireframe = mesh;
+      this.segments[segId].wireframe.material.uniforms.opacity.value = 0;
+    } else {
+      this.segments[segId].mesh = mesh;
 
-    var shader = $.extend(true, {}, Shaders.segIdPacked);
-    var u = shader.uniforms.segid.value = segId;
-    var material = new THREE.ShaderMaterial(shader);
-    material.blending = 0;
-    var im = new THREE.Mesh(mesh.geometry, material);
-    im.segId = segId;
+      var shader = $.extend(true, {}, Shaders.segIdPacked);
+      var u = shader.uniforms.segid.value = segId;
+      var material = new THREE.ShaderMaterial(shader);
+      material.blending = 0;
+      var im = new THREE.Mesh(mesh.geometry, material);
+      im.segId = segId;
 
-    this.segments[segId].interactiveMesh = im;
+      this.segments[segId].interactiveMesh = im;
+    }
 
     var cb = this.segments[segId].cb;
     if (cb) cb();
@@ -714,10 +778,16 @@ Tile.prototype.load = function (data, type, x, y, callback) {
 
         pixelToSegId[pixel] = segId;
 
-        if (!segSize[segId]) {
-          segSize[segId] = 0;
-        }
-        segSize[segId]++;
+        segInfo[segId] = segInfo[segId] || { size: 0, min: new THREE.Vector3(px, py, z), max: new THREE.Vector3(px, py, z)};
+
+        segInfo[segId].size++;
+        segInfo[segId].min.x = Math.min(segInfo[segId].min.x, px);
+        segInfo[segId].min.y = Math.min(segInfo[segId].min.y, py);
+        segInfo[segId].min.z = Math.min(segInfo[segId].min.z, z);
+
+        segInfo[segId].max.x = Math.max(segInfo[segId].max.x, px);
+        segInfo[segId].max.y = Math.max(segInfo[segId].max.y, py);
+        segInfo[segId].max.z = Math.max(segInfo[segId].max.z, z);
       }
 
       if (_this.isComplete()) { // all tiles have been loaded
@@ -967,6 +1037,9 @@ cube.add(cubeContents);
 var segments = new THREE.Object3D();
 segments.name = 'is segacious a word?';
 cubeContents.add(segments);
+
+var wfSegments = new THREE.Object3D();
+cubeContents.add(wfSegments);
 
 var segmentInteraction = new THREE.Object3D();
 segmentInteraction.visible = false;
@@ -1270,21 +1343,22 @@ function selectNeighboringSegment(mock) {
 
   var pt2 = worldToCube(camera.realCamera.position.clone());
 
+  SegmentManager.setHoverOrigin(pt1);
+
   pt1.sub(cubeContents.position);
   pt2.sub(cubeContents.position);
 
   var delta = new THREE.Vector3().subVectors(pt2, pt1);
   delta.normalize();
 
-  var checkVoxels = checkPointsContainer.children;
-  for (var i = checkVoxels.length - 1; i >= 0; i--) {
-    checkPointsContainer.remove(checkVoxels[i]);
-  };
+  // var checkVoxels = checkPointsContainer.children;
+  // for (var i = checkVoxels.length - 1; i >= 0; i--) {
+  //   checkPointsContainer.remove(checkVoxels[i]);
+  // };
 
-  lineGeo.vertices[0].set(pt1.x, pt1.y, pt1.z);
-  lineGeo.vertices[1].set(pt2.x, pt2.y, pt2.z);
-  lineGeo.verticesNeedUpdate = true;
-  needsRender = true;
+  // lineGeo.vertices[0].set(pt1.x, pt1.y, pt1.z);
+  // lineGeo.vertices[1].set(pt2.x, pt2.y, pt2.z);
+  // lineGeo.verticesNeedUpdate = true;
 
   for (var i = 0; i < 10; i++) {
     // todo, do I want to round or floor? I think floor makes more sense for pixel
@@ -1313,9 +1387,9 @@ function selectNeighboringSegment(mock) {
       if (mock === 3) {
         SegmentManager.selectSegId(segId, function () {}, true)
       } else if (mock) {
-        SegmentManager.hoverSegId(segId, z);
+        SegmentManager.hoverSegId(segId, {x: x, y: y, z: z});
       } else {
-        SegmentManager.hoverSegId(segId, z);
+        SegmentManager.hoverSegId(segId, {x: x, y: y, z: z});
         SegmentManager.selectSegId(segId, function () {
           SegmentManager.hoverSegId(null);
         });
@@ -1572,9 +1646,14 @@ function handleInput() {
   }
 
   if (key('p', PRESSED)) {
-    segments.children.map(function (segment) {
-      console.log(segment.material.uniforms.opacity.value, segment.visible, segment.material.transparent);
-    });
+    // for (let segId of Object.keys(SegmentManager.segments)) {
+    //   if (SegmentManager.segments[segId].wireframe) {
+    //     if (segments.chil)
+    //   }
+    // }
+    console.log('visible wireframes', wfSegments.children.map(function (segment) {
+      return segment.segId;
+    }));
   }
 }
 
@@ -1604,5 +1683,37 @@ function animate() {
   requestAnimationFrame(animate); // TODO where should this go in the function (beginning, end?)
 }
 requestAnimationFrame(animate);
+
+window.h = function (segId) {
+  var tVec = new THREE.Vector3();
+
+  tVec.subVectors(segInfo[segId].max, segInfo[segId].min).divideScalar(2);
+
+  tVec.add(segInfo[segId].min);
+
+  SegmentManager.hoverSegId(segId, tVec);
+
+  SegmentManager.setHoverOrigin(tVec.divideScalar(CUBE_SIZE));
+
+
+
+  var tVec2 = new THREE.Vector3();
+  tVec2.subVectors(segInfo[segId].max, segInfo[segId].min).divideScalar(CUBE_SIZE);
+
+  var cubeShape = new THREE.Mesh(
+    new THREE.BoxGeometry(tVec2.x, tVec2.y, tVec2.z),
+    new THREE.MeshNormalMaterial({visible: false})
+  );
+
+  var wireframe = new THREE.BoxHelper(cubeShape);
+  wireframe.position.copy(tVec);
+  // wireframe.name = "ol' wires";
+  // wireframe.material.color.set("#888888");
+  cubeContents.add(wireframe);
+};
+
+window.s = function (segId) {
+  SegmentManager.selectSegId(segId);
+}
 
 }(window))

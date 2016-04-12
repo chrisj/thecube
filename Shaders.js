@@ -62,33 +62,41 @@ Shaders = {
 	wireframe: {
 		derivatives: true,
 		uniforms: {
-
+			origin: { type: "v3", value: new THREE.Vector3( 0, 0, 0 ) },
+			opacity: { type: "f", value: 1.0 },
 		},
 		vertexShader: `
+			uniform vec3 origin;
+
 			attribute vec3 center;
 			varying vec3 vCenter;
+			varying float dTOS;
 
 			void main() {
 
 				vCenter = center;
+				dTOS = (pow(position.x - origin.x, 2.0) + pow(position.y - origin.y, 2.0) + pow(position.z - origin.z, 2.0)) / .03;
 				gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+				gl_Position.z -= 0.00001; // fix z-fighting
 
 			}
 		`,
 		fragmentShader: `
 			varying vec3 vCenter;
+			varying float dTOS;
+			uniform float opacity;
 
 			float edgeFactor() {
 
 				vec3 d = fwidth( vCenter );
-				vec3 a3 = smoothstep( vec3( 0.0 ), d * 0.02, vCenter );
+				vec3 a3 = smoothstep( vec3( 0.0 ), d * 1.5, vCenter );
 				return min( min( a3.x, a3.y ), a3.z );
 
 			}
 
 			void main() {
 				gl_FragColor.rgb = vec3(1.0, 1.0, 0.0);
-				gl_FragColor.a = (1.0 - edgeFactor()) * 0.5;
+				gl_FragColor.a = opacity * (1.0 - dTOS) * (1.0 - edgeFactor()) * 0.5;
 			}
 		`
 	},
@@ -105,8 +113,8 @@ Shaders = {
 			ambientLightColor: { type: "c", value: new THREE.Color( 0x111111 ) },
 		},
 
-		vertexShader:
-			`varying vec3 vViewPosition;
+		vertexShader: `
+			varying vec3 vViewPosition;
 			varying vec3 vNormal;
 			varying float isEdge;
 
@@ -121,8 +129,8 @@ Shaders = {
 				isEdge = float(position.x <= 1.0 / 256.0 || position.x >= 255.0 / 256.0 || position.y <= 1.1 / 256.0 || position.y >= 255.0 / 256.0 || position.z <= 1.0 / 256.0 || position.z >= 255.0 / 256.0);
 			}`,
 
-		fragmentShader:
-			`uniform float opacity;
+		fragmentShader: `
+			uniform float opacity;
 			uniform vec3 diffuse;
 			uniform vec3 ambient;
 			uniform vec3 specular;

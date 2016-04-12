@@ -285,20 +285,20 @@ static const int triTable[256*16] = {
 0, 3, 8, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1,
 - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1};
 
-
+// why do I add 0.5?
 static const float EDGE_OFFSET_WORLD[12 * 3] = {
-	0.5, 0, 0,
-	1, 0, 0.5,
-	0.5, 0, 1,
-	0, 0, 0.5,
-	0.5, 1, 0,
-	1, 1, 0.5,
-	0.5, 1, 1,
-	0, 1, 0.5,
-	0, 0.5, 0,
-	1, 0.5, 0,
-	1, 0.5, 1,
-	0, 0.5, 1
+	1.0, 0.5, 0.5,
+	1.5, 0.5, 1.0,
+	1.0, 0.5, 1.5,
+	0.5, 0.5, 1.0,
+	1.0, 1.5, 0.5,
+	1.5, 1.5, 1.0,
+	1.0, 1.5, 1.5,
+	0.5, 1.5, 1.0,
+	0.5, 1.0, 0.5,
+	1.5, 1.0, 0.5,
+	1.5, 1.0, 1.5,
+	0.5, 1.0, 1.5
 };
 
 static const int VO[8] = {
@@ -538,9 +538,9 @@ float* marching_cubes(int segId, uint16_t* pixelToSegId) {
 
 	int startIdx = 0;
 
-	float z;
 	float x;
 	float y;
+	float z;
 	float off_x;
 	float off_y;
 	float off_z;
@@ -566,10 +566,6 @@ float* marching_cubes(int segId, uint16_t* pixelToSegId) {
 		z = floor(i / Z_OFF);
 		y = floor((i - z * Z_OFF) / Y_OFF);
 		x = i % Y_OFF;
-
-		z += 0.5;
-		y += 0.5;
-		x += 0.5;
 
 		for (m = 0; m < indvTriCount; ++m) {
 			for (v = 0; v < 3; ++v) {
@@ -611,47 +607,164 @@ float* marching_cubes(int segId, uint16_t* pixelToSegId) {
 	return meshData;
 }
 
-float* marching_cubes_wireframe(int segId, uint16_t* pixelToSegId) {
+static uint8_t wf_counts[TOTAL_VOXELS];
+
+float* marching_cubes_wireframe(int segId, int originX, int originY, int originZ, uint16_t* pixelToSegId) {
 	printf("wireframe marching_cubes(%d)\n", segId);
 
 	clock_t verybegin, begin, end;
 
 	verybegin = clock();
 
+	// memset(wf_counts, 0, TOTAL_VOXELS);
+
 	double time_spent;
 
-	begin = clock();
-
-	// faster in asm.js
-	// memset(counts, 0, TOTAL_VOXELS);
-	// faster in c
-	// counts = (unsigned char*)calloc((TOTAL_VOXELS), sizeof(unsigned char));
-
-	end = clock();
-
-	time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
-
-	printf("wireframe memset, time = %fms\n", time_spent);
-
 	int triCount = 0;
+
+	const int PREVIEW_SIZE = 100;
+
+	int z;
+	int x;
+	int y;
+
+	// originX = 3;
+	// originY = 3;
+	// originZ = 3;
+	
+	int startX = originX - PREVIEW_SIZE / 2;
+	int endX = startX + PREVIEW_SIZE - 1;
+	int startY = originY - PREVIEW_SIZE / 2;
+	int endY = startY + PREVIEW_SIZE - 1;
+	int startZ = originZ - PREVIEW_SIZE / 2;
+	int endZ = startZ + PREVIEW_SIZE - 1;
+
+	startX = fmax(1, startX);
+	startY = fmax(1, startY);
+	startZ = fmax(1, startZ);
+
+	endX = fmin(X_DIM - 2, endX);
+	endY = fmin(Y_DIM - 2, endY);
+	endZ = fmin(Z_DIM - 2, endZ);
+
+	int X_WIN_SIZE = endX - startX + 1;
+	int Y_WIN_SIZE = endY - startY + 1;
+
+	int i = endX + endY * X_DIM + endZ * X_DIM * Y_DIM;
+
+	int triCount2 = 0;
 
 	// step 1
 
 	begin = clock();
 
-	for (int i = TOTAL_VOXELS - 1; i >= 0; --i) {
-		if (pixelToSegId[i] == segId) {
-			counts[i                        ] |= 1;
-			counts[i - X_OFF                ] |= 2;
-			counts[i         - Y_OFF        ] |= 16;
-			counts[i - X_OFF - Y_OFF        ] |= 32;
-			counts[i                 - Z_OFF] |= 8;
-			counts[i - X_OFF         - Z_OFF] |= 4;
-			counts[i         - Y_OFF - Z_OFF] |= 128;
-			counts[i - X_OFF - Y_OFF - Z_OFF] |= 64;
-		}
+	int checkCount1 = 0;
 
-		triCount += triCountTable[counts[i]];
+	printf("x %d %d y %d %d z %d %d\n", startX, endX, startY, endY, startZ, endZ);
+
+	for (z = endZ; z >= startZ; --z) {
+		for (y = endY; y >= startY; --y) {
+			for (x = endX; x >= startX; --x) {
+				checkCount1++;
+				if (pixelToSegId[i] == segId) {
+					// printf("march: %d %d %d\n", x, y, z);
+					wf_counts[i                        ] |= 1;
+					wf_counts[i - X_OFF                ] |= 2;
+					wf_counts[i         - Y_OFF        ] |= 16;
+					wf_counts[i - X_OFF - Y_OFF        ] |= 32;
+					wf_counts[i                 - Z_OFF] |= 8;
+					wf_counts[i - X_OFF         - Z_OFF] |= 4;
+					wf_counts[i         - Y_OFF - Z_OFF] |= 128;
+					wf_counts[i - X_OFF - Y_OFF - Z_OFF] |= 64;
+				}
+				triCount += triCountTable[wf_counts[i]];
+
+				--i;
+			}
+			i = i + X_WIN_SIZE - Y_OFF;
+		}
+		i = i + Y_WIN_SIZE * Y_OFF - Z_OFF;
+	}
+
+	int si = startZ - 1;
+	i = startX + startY * X_DIM + si * X_DIM * Y_DIM;
+	for (z = si; z <= si; ++z) {
+		for (y = startY; y <= endY; ++y) {
+			for (x = startX; x <= endX; ++x) {
+				wf_counts[i] = 0;
+				++i;
+			}
+			i = i - X_WIN_SIZE + Y_OFF;
+		}
+		i = i - Y_WIN_SIZE * Y_OFF + Z_OFF;
+	}
+
+	si = endZ;
+	i = startX + startY * X_DIM + si * X_DIM * Y_DIM;
+	for (z = si; z <= si; ++z) {
+		for (y = startY; y <= endY; ++y) {
+			for (x = startX; x <= endX; ++x) {
+				triCount -= triCountTable[wf_counts[i]];
+				wf_counts[i] = 0;
+				++i;
+			}
+			i = i - X_WIN_SIZE + Y_OFF;
+		}
+		i = i - Y_WIN_SIZE * Y_OFF + Z_OFF;
+	}
+
+	si = startY - 1;
+	i = startX + si * X_DIM + startZ * X_DIM * Y_DIM;
+	for (z = startZ; z <= endZ; ++z) {
+		for (y = si; y <= si; ++y) {
+			for (x = startX; x <= endX; ++x) {
+				wf_counts[i] = 0;
+				++i;
+			}
+			i = i - X_WIN_SIZE + Y_OFF;
+		}
+		i = i - 1 * Y_OFF + Z_OFF;
+	}
+
+	si = endY;
+	i = startX + si * X_DIM + startZ * X_DIM * Y_DIM;
+	for (z = startZ; z <= endZ; ++z) {
+		for (y = si; y <= si; ++y) {
+			for (x = startX; x <= endX; ++x) {
+				triCount -= triCountTable[wf_counts[i]];
+				wf_counts[i] = 0;
+				++i;
+			}
+			i = i - X_WIN_SIZE + Y_OFF;
+		}
+		i = i - 1 * Y_OFF + Z_OFF;
+	}
+
+	si = startX - 1;
+	i = si + startY * X_DIM + startZ * X_DIM * Y_DIM;
+	for (z = startZ; z <= endZ; ++z) {
+		for (y = startY; y <= endY; ++y) {
+			for (x = si; x <= si; ++x) {
+				wf_counts[i] = 0;
+				++i;
+			}
+			i = i - 1 + Y_OFF;
+		}
+		i = i - Y_WIN_SIZE * Y_OFF + Z_OFF;
+	}
+
+	si = endX;
+	i = si + startY * X_DIM + startZ * X_DIM * Y_DIM;
+	for (z = startZ; z <= endZ; ++z) {
+		for (y = startY; y <= endY; ++y) {
+			for (x = si; x <= si; ++x) {
+				triCount -= triCountTable[wf_counts[i]];
+				wf_counts[i] = 0;
+				++i;
+			}
+			i = i - 1 + Y_OFF;
+		}
+		i = i - Y_WIN_SIZE * Y_OFF + Z_OFF;
 	}
 
 	end = clock();
@@ -682,9 +795,6 @@ float* marching_cubes_wireframe(int segId, uint16_t* pixelToSegId) {
 
 	int startIdx = 0;
 
-	float z;
-	float x;
-	float y;
 	float off_x;
 	float off_y;
 	float off_z;
@@ -702,35 +812,57 @@ float* marching_cubes_wireframe(int segId, uint16_t* pixelToSegId) {
 
 	begin = clock();
 
-	for (int i = 0; i < TOTAL_VOXELS; ++i) {
-		cubeIndex = counts[i];
-		counts[i] = 0;
-		indvTriCount = triCountTable[cubeIndex];
-		cubeIndex <<= 4;
+	i = startX + startY * X_DIM + startZ * X_DIM * Y_DIM;
 
-		z = floor(i / Z_OFF);
-		y = floor((i - z * Z_OFF) / Y_OFF);
-		x = i % Y_OFF;
+	int finalTriCount = 0;
 
-		z += 0.5;
-		y += 0.5;
-		x += 0.5;
+	// why do I decrement end instead of incrementing start? because we start and the end and we bit flip past the end
+	endZ--;
+	endY--;
+	endX--;
 
-		for (m = 0; m < indvTriCount; ++m) {
-			for (v = 0; v < 3; ++v) {
-				bufferIdx = triTable[cubeIndex];
+	X_WIN_SIZE--;
+	Y_WIN_SIZE--;
 
-				off_x = EDGE_OFFSET_WORLD[bufferIdx * 3];
-				off_y = EDGE_OFFSET_WORLD[bufferIdx * 3 + 1];
-				off_z = EDGE_OFFSET_WORLD[bufferIdx * 3 + 2];
+	int checkCount2 = 0;
 
-				meshVertices[startIdx]   = (x + off_x) / X_DIM;
-				meshVertices[startIdx+1] = (y + off_y) / Y_DIM;
-				meshVertices[startIdx+2] = (z + off_z) / Z_DIM;
-				cubeIndex++;
-				startIdx += 3;
+	int triCountTake2 = 0;
+
+	printf("x %d %d y %d %d z %d %d\n", startX, endX, startY, endY, startZ, endZ);
+
+	for (z = startZ; z <= endZ; ++z) {
+		for (y = startY; y <= endY; ++y) {
+			for (x = startX; x <= endX; ++x) {
+				cubeIndex = wf_counts[i];
+				wf_counts[i] = 0;
+				indvTriCount = triCountTable[cubeIndex];
+				cubeIndex <<= 4;
+
+				// printf("check: %d %d %d  count %d\n", x, y, z, indvTriCount);
+
+				for (m = 0; m < indvTriCount; ++m) {
+					for (v = 0; v < 3; ++v) {
+						bufferIdx = triTable[cubeIndex];
+
+						off_x = EDGE_OFFSET_WORLD[bufferIdx * 3];
+						off_y = EDGE_OFFSET_WORLD[bufferIdx * 3 + 1];
+						off_z = EDGE_OFFSET_WORLD[bufferIdx * 3 + 2];
+
+						meshVertices[startIdx]   = (off_x + x) / X_DIM;
+						meshVertices[startIdx+1] = (off_y + y) / Y_DIM;
+						meshVertices[startIdx+2] = (off_z + z) / Z_DIM;
+
+						cubeIndex++;
+						startIdx += 3;
+					}
+					finalTriCount++;
+				}
+
+				++i;
 			}
+			i = i - X_WIN_SIZE + Y_OFF;
 		}
+		i = i - Y_WIN_SIZE * Y_OFF + Z_OFF;
 	}
 
 	end = clock();
@@ -741,37 +873,11 @@ float* marching_cubes_wireframe(int segId, uint16_t* pixelToSegId) {
 
 	time_spent = (double)(end - verybegin) * 1000 / CLOCKS_PER_SEC;
 
-	printf("wireframe total, time = %fms, tris = %d\n", time_spent, triCount);
+	printf("wireframe total, time = %fms, tris = %d/%d/%d/%d\n", time_spent,     triCount, finalTriCount, triCount2, triCountTake2);
+
+	printf("checkCount %d/%d\n", checkCount1, checkCount2);
 
 	return meshData;
 }
 
 }
-
-// int main() {
-// 	clock_t begin, end;
-// 	double time_spent;
-
-// 	unsigned short* pixelToSegId;
-// 	pixelToSegId = (unsigned short*)malloc(TOTAL_VOXELS * sizeof(unsigned short));
-
-// 	FILE *filePtr = fopen("segmentation", "rb");
-
-// 	fread(pixelToSegId, 256 * 256 * 256, 2, filePtr);
-
-// 	fclose(filePtr);
-
-// 	printf("hello, world! %lu - %d\n", sizeof(unsigned short), pixelToSegId[128 + 128 * 256 + 128 * (256 * 256)]);
-
-// 	begin = clock();
-// 	float* meshPtr = marching_cubes(2923, pixelToSegId);
-// 	end = clock();
-
-// 	time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
-
-// 	printf("Mesh PTR = %lu, time = %fms\n", (uintptr_t)meshPtr, time_spent);
-
-// 	free(meshPtr);
-// 	free(pixelToSegId);
-// 	return 0;
-// }

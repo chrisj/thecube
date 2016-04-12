@@ -19,7 +19,7 @@ function setVolumeData(data) {
 	pixelToSegIdPtr = dataHeap.byteOffset;
 }
 
-function generateMeshForSegId(segId) {
+function generateMeshForSegId(segId, origin, callback) {
 	var meshPtr = marchingCubes(segId, pixelToSegIdPtr);
 
 	var arrSizeBytes = new Float32Array(Module.HEAPU8.buffer, meshPtr, 1)[0] * 4;
@@ -29,13 +29,13 @@ function generateMeshForSegId(segId) {
 	var positions = Module.HEAPU8.buffer.slice(start, start += arrSizeBytes);
 	var normals = Module.HEAPU8.buffer.slice(start, start += arrSizeBytes);
 
-	Module._free(meshPtr);
+	postMessage({ callback: callback, segId: segId, positions: positions, normals: normals }, [positions, normals]);
 
-	postMessage([segId, false, positions, normals], [positions, normals]);
+	Module._free(meshPtr);
 }
 
-function generateWireframeForSegId(segId) {
-	var meshPtr = marchingCubesWireframe(segId, pixelToSegIdPtr);
+function generateWireframeForSegId(segId, origin, callback) {
+	var meshPtr = marchingCubesWireframe(segId, origin.x, origin.y, origin.z, pixelToSegIdPtr);
 
 	var arrSizeBytes = new Float32Array(Module.HEAPU8.buffer, meshPtr, 1)[0] * 4;
 
@@ -43,9 +43,9 @@ function generateWireframeForSegId(segId) {
 
 	var positions = Module.HEAPU8.buffer.slice(start, start += arrSizeBytes);
 
-	Module._free(meshPtr);
+	postMessage({ callback: callback, wireframe: true, segId: segId, positions: positions }, [positions]);
 
-	postMessage([segId, true, positions], [positions]);
+	Module._free(meshPtr);
 }
 
 onmessage = function (e) {
@@ -54,7 +54,7 @@ onmessage = function (e) {
 	} else if (e.data.name === 'segId') {
 
 		var meshFunc = e.data.wireframe ? generateWireframeForSegId : generateMeshForSegId;
-		meshFunc(e.data.data);
+		meshFunc(e.data.data, e.data.origin, e.data.callback);
 	} else {
 		console.log('invalid message', e);
 	}
