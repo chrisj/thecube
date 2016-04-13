@@ -14,6 +14,10 @@ var pixelToSegIdPtr;
 
 function setVolumeData(data) {
 	console.log('setVolumeData');
+	if (pixelToSegIdPtr) {
+		Module._free(pixelToSegIdPtr);
+	}
+
 	var whatIsThis = Module._malloc(data.byteLength);
 	var dataHeap = new Uint8Array(Module.HEAPU8.buffer, whatIsThis, data.byteLength);
 	dataHeap.set(new Uint8Array(data.buffer));
