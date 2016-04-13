@@ -2,7 +2,7 @@
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
-#include <time.h>
+// #include <time.h>
 #include <stdint.h>
 
 extern "C" {
@@ -335,19 +335,19 @@ static int8_t gradient[TOTAL_VOXELS * 3];
 
 
 float* marching_cubes(int segId, int startX, int startY, int startZ, int endX, int endY, int endZ, uint16_t* pixelToSegId) {
-	printf("marching_cubes(%d)\n", segId);
+	// printf("marching_cubes(%d)\n", segId);
 
-	clock_t verybegin, begin, end;
+	// clock_t verybegin, begin, end;
 
-	verybegin = clock();
+	// verybegin = clock();
 
-	double time_spent;
+	// double time_spent;
 
 	int triCount = 0;
 
 	// step 1
 
-	begin = clock();
+	// begin = clock();
 
 	const int close = 10;
 	const int med = 7;
@@ -515,13 +515,13 @@ float* marching_cubes(int segId, int startX, int startY, int startZ, int endX, i
 		i = i + Y_WIN_SIZE * Y_OFF - Z_OFF;
 	}
 
-	end = clock();
+	// end = clock();
 
-	time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
+	// time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
 
-	printf("march, time = %fms\n", time_spent);
+	// printf("march, time = %fms\n", time_spent);
 
-	begin = clock();
+	// begin = clock();
 
 	// count vertices, allocate memory
 	
@@ -536,11 +536,11 @@ float* marching_cubes(int segId, int startX, int startY, int startZ, int endX, i
 	float *meshVertices = meshData + 1;
 	float *meshNormals = meshVertices + vertexArrCount;
 
-	end = clock();
+	// end = clock();
 
-	time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
+	// time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
 
-	printf("allocate mesh memory, time = %fms\n", time_spent);
+	// printf("allocate mesh memory, time = %fms\n", time_spent);
 
 	int startIdx = 0;
 
@@ -556,7 +556,7 @@ float* marching_cubes(int segId, int startX, int startY, int startZ, int endX, i
 
 	int vox1, vox2;
 
-	begin = clock();
+	// begin = clock();
 
 	i = startX + startY * X_DIM + startZ * X_DIM * Y_DIM;
 
@@ -600,18 +600,18 @@ float* marching_cubes(int segId, int startX, int startY, int startZ, int endX, i
 		i = i - Y_WIN_SIZE * Y_OFF + Z_OFF;
 	}
 
-	end = clock();
+	// end = clock();
 
-	time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
+	// time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
 
-	printf("triangulate, time = %fms\n", time_spent);
+	// printf("triangulate, time = %fms\n", time_spent);
 
 
 	i = startX + startY * X_DIM + startZ * X_DIM * Y_DIM;
 
 	// clean up counts and gradient
 
-	begin = clock();
+	// begin = clock();
 
 
 	int gIdx;
@@ -632,15 +632,15 @@ float* marching_cubes(int segId, int startX, int startY, int startZ, int endX, i
 		i = i - Y_WIN_SIZE * Y_OFF + Z_OFF;
 	}
 
-	end = clock();
+	// end = clock();
 
-	time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
+	// time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
 
-	printf("mem cleanup, time = %fms\n", time_spent);
+	// printf("mem cleanup, time = %fms\n", time_spent);
 
-	time_spent = (double)(end - verybegin) * 1000 / CLOCKS_PER_SEC;
+	// time_spent = (double)(end - verybegin) * 1000 / CLOCKS_PER_SEC;
 
-	printf("total, time = %fms, tris = %d\n", time_spent, triCount);
+	// printf("total, time = %fms, tris = %d\n", time_spent, triCount);
 
 	return meshData;
 }
@@ -648,13 +648,13 @@ float* marching_cubes(int segId, int startX, int startY, int startZ, int endX, i
 static uint8_t wf_counts[TOTAL_VOXELS];
 
 float* marching_cubes_wireframe(int segId, int originX, int originY, int originZ, const int PREVIEW_SIZE, uint16_t* pixelToSegId) {
-	printf("wireframe marching_cubes(%d)\n", segId);
+	// printf("wireframe marching_cubes(%d)\n", segId);
 
-	clock_t verybegin, begin, end;
+	// clock_t verybegin, begin, end;
 
-	verybegin = clock();
+	// verybegin = clock();
 
-	double time_spent;
+	// double time_spent;
 
 	int triCount = 0;
 
@@ -684,11 +684,13 @@ float* marching_cubes_wireframe(int segId, int originX, int originY, int originZ
 
 	// step 1
 
-	begin = clock();
+	// begin = clock();
 
 	int checkCount1 = 0;
 
-	printf("x %d %d y %d %d z %d %d\n", startX, endX, startY, endY, startZ, endZ);
+	// printf("x %d %d y %d %d z %d %d\n", startX, endX, startY, endY, startZ, endZ);
+
+	// TODO, this probably fails to reset the memory at startZ -1, startY -1, startX - 1
 
 	for (z = endZ; z >= startZ; --z) {
 		for (y = endY; y >= startY; --y) {
@@ -795,13 +797,13 @@ float* marching_cubes_wireframe(int segId, int originX, int originY, int originZ
 		i = i - Y_WIN_SIZE * Y_OFF + Z_OFF;
 	}
 
-	end = clock();
+	// end = clock();
 
-	time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
+	// time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
 
-	printf("wireframe march, time = %fms\n", time_spent);
+	// printf("wireframe march, time = %fms\n", time_spent);
 
-	begin = clock();
+	// begin = clock();
 
 	// count vertices, allocate memory
 	
@@ -815,11 +817,11 @@ float* marching_cubes_wireframe(int segId, int originX, int originY, int originZ
 
 	float *meshVertices = meshData + 1;
 
-	end = clock();
+	// end = clock();
 
-	time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
+	// time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
 
-	printf("wireframe allocate mesh memory, time = %fms\n", time_spent);
+	// printf("wireframe allocate mesh memory, time = %fms\n", time_spent);
 
 	int startIdx = 0;
 
@@ -835,7 +837,7 @@ float* marching_cubes_wireframe(int segId, int originX, int originY, int originZ
 
 	int vox1, vox2;
 
-	begin = clock();
+	// begin = clock();
 
 	i = startX + startY * X_DIM + startZ * X_DIM * Y_DIM;
 
@@ -887,17 +889,17 @@ float* marching_cubes_wireframe(int segId, int originX, int originY, int originZ
 		i = i - Y_WIN_SIZE * Y_OFF + Z_OFF;
 	}
 
-	end = clock();
+	// end = clock();
 
-	time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
+	// time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
 
-	printf("wireframe triangulate, time = %fms\n", time_spent);
+	// printf("wireframe triangulate, time = %fms\n", time_spent);
 
-	time_spent = (double)(end - verybegin) * 1000 / CLOCKS_PER_SEC;
+	// time_spent = (double)(end - verybegin) * 1000 / CLOCKS_PER_SEC;
 
-	printf("wireframe total, time = %fms, tris = %d\n", time_spent, triCount);
+	// printf("wireframe total, time = %fms, tris = %d\n", time_spent, triCount);
 
-	printf("checkCount %d/%d\n", checkCount1, checkCount2);
+	// printf("checkCount %d/%d\n", checkCount1, checkCount2);
 
 	return meshData;
 }
