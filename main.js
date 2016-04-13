@@ -52,8 +52,6 @@ var stagingContext = stagingCanvas.getContext('2d');
 
 var pixelToSegId = new Int16Array(256 * 256 * 256);
 
-var segInfo = {};
-
 var CHUNKS = [
   [0,0,0],
   [1,0,0],
@@ -257,7 +255,7 @@ function camInfo() {
 
 
 function workerGenerateMesh(segId, wireframe, origin, callback) {
-  var msg = { name: 'segId', wireframe: wireframe, origin: origin, data: segId, min: segInfo[segId].min, max: segInfo[segId].max };
+  var msg = { name: 'segId', wireframe: wireframe, origin: origin, data: segId, min: SegmentManager.segments[segId].min, max: SegmentManager.segments[segId].max };
 
   var unique = MCWorker.count++;
   MCWorker.callbacks[unique] = function (data) {
@@ -402,7 +400,6 @@ var SegmentManager = {
 
     function loadSeedMeshes() {
       _this.seeds.forEach(function (segId) {
-        _this.segments[segId] = {};
         workerGenerateMesh(segId, false, null, function (segId, mesh) {
           SegmentManager.addMesh(segId, mesh, false);
           SegmentManager.displayMesh(segId, false);
@@ -437,8 +434,6 @@ var SegmentManager = {
     // console.log('hover', segId, this.hover);
 
     if (segId !== null) {
-      this.segments[segId] = this.segments[segId] || {};
-
       var swap = false;
 
       if (this.segments[segId].origin) {
@@ -498,7 +493,7 @@ var SegmentManager = {
   selectSegId: function (segId, cb, multi) {
     console.log('selectSegId', segId);
 
-    if (multi && segInfo[segId].size > 5000) {
+    if (multi && this.segments[segId].size > 5000) {
       return;
     }
 
@@ -506,7 +501,6 @@ var SegmentManager = {
       return;
     }
 
-    this.segments[segId] = this.segments[segId] || {};
     Object.assign(this.segments[segId], { selected: true, cb: cb, multi: !!multi });
     workerGenerateMesh(segId, false, null, function (segId, mesh) {
       SegmentManager.addMesh(segId, mesh, false);
@@ -516,7 +510,7 @@ var SegmentManager = {
     // animate to center of segment, it would be nice to animate to center of mass, also maybe only for big segments
     // and possibly zoom out to fit the whole segment
     var tVec = new THREE.Vector3();
-    tVec.subVectors(segInfo[segId].max, segInfo[segId].min).divideScalar(2).add(segInfo[segId].min).divideScalar(CUBE_SIZE);
+    tVec.copy(SegmentManager.segments[segId].centerOfMass).divideScalar(SegmentManager.segments[segId].size).divideScalar(CUBE_SIZE);
 
     tVec.x -= 0.5;
     tVec.y -= 0.5;
@@ -789,16 +783,20 @@ Tile.prototype.load = function (data, type, x, y, callback) {
 
         pixelToSegId[pixel] = segId;
 
-        segInfo[segId] = segInfo[segId] || { size: 0, min: new THREE.Vector3(px, py, z), max: new THREE.Vector3(px, py, z)};
+        SegmentManager.segments[segId] = SegmentManager.segments[segId] || { size: 0, centerOfMass: new THREE.Vector3(0, 0, 0), min: new THREE.Vector3(px, py, z), max: new THREE.Vector3(px, py, z)};
 
-        segInfo[segId].size++;
-        segInfo[segId].min.x = Math.min(segInfo[segId].min.x, px);
-        segInfo[segId].min.y = Math.min(segInfo[segId].min.y, py);
-        segInfo[segId].min.z = Math.min(segInfo[segId].min.z, z);
+        SegmentManager.segments[segId].size++;
+        SegmentManager.segments[segId].min.x = Math.min(SegmentManager.segments[segId].min.x, px);
+        SegmentManager.segments[segId].min.y = Math.min(SegmentManager.segments[segId].min.y, py);
+        SegmentManager.segments[segId].min.z = Math.min(SegmentManager.segments[segId].min.z, z);
 
-        segInfo[segId].max.x = Math.max(segInfo[segId].max.x, px);
-        segInfo[segId].max.y = Math.max(segInfo[segId].max.y, py);
-        segInfo[segId].max.z = Math.max(segInfo[segId].max.z, z);
+        SegmentManager.segments[segId].max.x = Math.max(SegmentManager.segments[segId].max.x, px);
+        SegmentManager.segments[segId].max.y = Math.max(SegmentManager.segments[segId].max.y, py);
+        SegmentManager.segments[segId].max.z = Math.max(SegmentManager.segments[segId].max.z, z);
+
+        SegmentManager.segments[segId].centerOfMass.x += px;
+        SegmentManager.segments[segId].centerOfMass.y += py;
+        SegmentManager.segments[segId].centerOfMass.z += z;
       }
 
       if (_this.isComplete()) { // all tiles have been loaded
