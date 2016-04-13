@@ -355,13 +355,10 @@ float* marching_cubes(int segId, int startX, int startY, int startZ, int endX, i
 
 	int x, y, z;
 
+	// n
 	startX--;
 	startY--;
 	startZ--;
-
-	endX++;
-	endY++;
-	endZ++;
 
 	int X_WIN_SIZE = endX - startX + 1;
 	int Y_WIN_SIZE = endY - startY + 1;
