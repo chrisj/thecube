@@ -3,6 +3,16 @@
 
 var MCWorker = new Worker('mc_worker.js');
 
+// TODO, hacky
+MCWorker.callbacks = {};
+MCWorker.count = 0;
+
+MCWorker.onmessage = function (e) {
+  if (e.data.callback) {
+    MCWorker.callbacks[e.data.callback](e.data.msg);
+  }
+};
+
 var geometry2 = new THREE.BufferGeometry();
 
 var vertexPositions2 = [
@@ -121,8 +131,6 @@ function assign(taskId, done) {
 //1228475 black spill
 assign(332, function () {
   console.log('loaded first cube');
-
-  // drawVoxelSegment(3328);
 });
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -170,11 +178,6 @@ var PlaneManager = {
 
 var seedColor = [0, 104, 242];
 var selectedColor = [40, 205, 255];
-
-// var selectSegIdTween = null;
-// var hideSegIdTween = null;
-
-var frctn = 0;
 
   
 
@@ -253,88 +256,32 @@ function camInfo() {
 }
 
 
-
-var SegmentsProxy = {
-  get fraction() {
-    return frctn;
-  },
-  set fraction(fr) {
-    frctn = fr;
-
-    var visPlane = TileManager.planes[0].plane;
-
-    var cameraToPlane = new THREE.Vector3();
-
-    scene.updateMatrixWorld();
-
-    cameraToPlane.setFromMatrixPosition(visPlane.matrixWorld);
-    cameraToPlane.subVectors(camera.realCamera.position, cameraToPlane);
-    var faceVec = new THREE.Vector3();
-    faceVec.set(0, 0, 1);
-
-    var normalMatrix = new THREE.Matrix3();
-
-    normalMatrix.getNormalMatrix(visPlane.matrixWorld);
-    faceVec.applyMatrix3(normalMatrix).normalize();
-
-    var cameraInFront = cameraToPlane.dot(faceVec) >= 0;
-
-    segments.children.forEach(function (segment) {
-      if (!cameraInFront) {
-        segment.material.uniforms.nMin.value.z = TileManager.planes[0].plane.position.z - fr - 1 / 256;
-        segment.material.uniforms.nMax.value.z = 1;
-      } else {
-        segment.material.uniforms.nMin.value.z = 0;
-        segment.material.uniforms.nMax.value.z = TileManager.planes[0].plane.position.z + fr + 1 / 256;
-      }
-    });
-
-    console.log(`${cameraInFront}[${fr}, ${1 - fr}`);
-  }
-}
-
 function workerGenerateMesh(segId, wireframe, origin, callback) {
-  var msg = { name: 'segId', wireframe: wireframe, origin: origin, data: segId };
-  if (callback) {
-    var unique = Symbol();
-    MCWorker.callbacks[unique] = callback;
-    msg.callback = unique;
-  }
-  MCWorker.postMessage(msg);
+  var msg = { name: 'segId', wireframe: wireframe, origin: origin, data: segId, min: segInfo[segId].min, max: segInfo[segId].max };
+
+  var unique = MCWorker.count++;
+  MCWorker.callbacks[unique] = function (data) {
+    var segGeo = new THREE.BufferGeometry();
+    segGeo.addAttribute('position', new THREE.BufferAttribute(new Float32Array(data.positions), 3));
+
+    if (data.normals) {
+      segGeo.addAttribute('normal', new THREE.BufferAttribute(new Float32Array(data.normals), 3));
+      segGeo.normalizeNormals();
+    }
+
+    var meshFunc = wireframe ? generateWireframeForSegment : generateMeshForSegment;
+    var mesh = meshFunc(data.segId, segGeo);
+    mesh.segId = segId;
+
+    callback(data.segId, mesh);
+  };
+
+  MCWorker.postMessage({ callback: unique, msg: msg });
 }
 
-
-var prevHover;
-
-function processMesh(data) {
-  var wireframe = !!data.wireframe;
-
-  var segGeo = new THREE.BufferGeometry();
-  segGeo.addAttribute('position', new THREE.BufferAttribute(new Float32Array(data.positions), 3));
-
-  if (data.normals) {
-    segGeo.addAttribute('normal', new THREE.BufferAttribute(new Float32Array(data.normals), 3));
-    segGeo.normalizeNormals();
-  }
-
-
-  var meshFunc = wireframe ? generateWireframeForSegment : generateMeshForSegment;
-
-  var segMesh = meshFunc(data.segId, segGeo);
-  SegmentManager.addMesh(data.segId, segMesh, wireframe);
-  SegmentManager.displayMesh(data.segId, wireframe);
-}
-
-MCWorker.onmessage = function (e) {
-  if (e.data.callback) {
-    MCWorker.callbacks[e.data.callback](e.data);
-  }
-
-  processMesh(e.data);
-}
-
+//  I may want to consider a different shader
 function generateWireframeForSegment(segId, segGeo) {
-  // TODO: Bring back quads
+  // TODO: Bring back quads (this is a message from the creator, maybe it would allow cube wireframe)
   var vectors = [
     new THREE.Vector3( 1, 0, 0 ),
     new THREE.Vector3( 0, 1, 0 ),
@@ -345,9 +292,7 @@ function generateWireframeForSegment(segId, segGeo) {
   var centers = new Float32Array( position.count * 3 );
 
   for ( var i = 0, l = position.count; i < l; i ++ ) {
-
     vectors[ i % 3 ].toArray( centers, i * 3 );
-
   }
 
   segGeo.addAttribute( 'center', new THREE.BufferAttribute( centers, 3 ) );
@@ -368,7 +313,6 @@ function generateWireframeForSegment(segId, segGeo) {
 
 function generateMeshForSegment(segId, segGeo) {
   var color = SegmentManager.isSeed(segId) ? "rgb(0, 104, 242)" : "rgb(40, 205, 255)";
-
 
   if (SegmentManager.segments[segId].multi) {
     color = "rgb(255, 255, 0)";
@@ -434,27 +378,43 @@ var SegmentManager = {
   },
 
   loadForTask: function (task) {
-    this.selected = [];
-    this.selectedColors = [];
     this.seeds = task.seeds;
-    // this.seedColors = task.seeds.map(segIdToRGB);
+    this.seedColors = task.seeds.map(segIdToRGB);
     this.meshes = {};
     this.hover = undefined;
+    this.visibleHover = undefined;
 
-    // segments.remove.apply(segments, segments.children);
+    for (let i = segments.children.length - 1; i >= 0; i--) {
+      segments.remove(segments.children[i]);
+    }
+
+    for (let i = wfSegments.children.length - 1; i >= 0; i--) {
+      wfSegments.remove(wfSegments.children[i]);
+    }
+
+    for (let i = segmentInteraction.children.length - 1; i >= 0; i--) {
+      segmentInteraction.remove(segmentInteraction.children[i]);
+    }
+
+    this.segments = {};
 
     var _this = this;
 
     function loadSeedMeshes() {
       _this.seeds.forEach(function (segId) {
         _this.segments[segId] = {};
-        workerGenerateMesh(segId);
+        workerGenerateMesh(segId, false, null, function (segId, mesh) {
+          SegmentManager.addMesh(segId, mesh, false);
+          SegmentManager.displayMesh(segId, false);
+        });
       });
     }
 
     return loadSeedMeshes;
   },
-
+  get selected () {
+    return Object.keys(this.segments).filter(segId => this.segments[segId].selected);
+  },
   isSeed: function (segId) {
     return this.seeds.indexOf(segId) !== -1;
   },
@@ -474,38 +434,66 @@ var SegmentManager = {
     needsRender = true;
   },
   hoverSegId: function (segId, origin) {
-    if (segId === this.hover) {
-      return;
-    }
-    console.log('hover', segId);
-    this.hover = segId;
-
-    this.segments[segId] = this.segments[segId] || {};
-
-    // clear current voxels
-    // hoverContainer.remove.apply(hoverContainer, hoverContainer.children);
-
-    // if (this.lastHoverCount) {
-    //   for (var i = 0; i < this.lastHoverCount; i++) {
-    //     particleGeo.vertices[i].set(-1000, -1000, -1000);
-    //   };
-    // }
+    // console.log('hover', segId, this.hover);
 
     if (segId !== null) {
+      this.segments[segId] = this.segments[segId] || {};
 
-      if (this.segments[segId].wireframe) {
-        this.displayMesh(segId, true);
-      } else {
-        workerGenerateMesh(segId, true, origin);
+      var swap = false;
+
+      if (this.segments[segId].origin) {
+        var d = this.segments[segId].origin.distanceTo(origin);
+        swap = d > 10;
       }
-      // drawVoxelSegment(segId, pixelToSegId, segSize[segId]);
+      var _this = this;
+
+      if (!this.segments[segId].origin || swap) {
+        this.segments[segId].origin = origin;
+        console.log('request mesh', segId);
+        this.segments[segId].state = 'preload';
+        workerGenerateMesh(segId, true, origin, function (segId, mesh) {
+          _this.segments[segId].state = 'loaded';
+          console.log('got mesh', segId);
+          if (!swap) {
+            // mesh.material.uniforms.color.value = new THREE.Color(0xff9900);
+            mesh.material.uniforms.opacity.value = 0;
+            _this.segments[segId].wireframe = mesh;
+          } else {
+            mesh.material.uniforms.opacity.value = _this.segments[segId].wireframe.material.uniforms.opacity.value;
+
+            // mesh.material.uniforms.color.value = new THREE.Color(0x0000ff);
+
+            wfSegments.remove(_this.segments[segId].wireframe);
+            _this.segments[segId].wireframe = mesh;
+          }
+
+          if (_this.hover === segId) {
+            _this.displayMesh(segId, true);
+          }
+        });
+      } else if (segId !== this.hover) {
+        // console.log('switch hover', this.hover, segId);
+        if (this.segments[segId].wireframe) {
+          this.displayMesh(segId, true);
+        } else {
+          if (this.segments[segId].state !== "preload") {
+            console.log("now we are in trouble");
+          }
+        }
+        
+      } else {
+        // do nothing
+      }
     } else {
-      // clearHover(); 
+      if (this.hover) {
+        if (this.segments[this.hover].wireframe) { // maybe I should just check state == preload
+          this.hideMesh(this.hover, true);
+        }
+        this.hover = null;
+      }
     }
 
-    // particleGeo.verticesNeedUpdate = true;
-
-    needsRender = true;
+    this.hover = segId;
   },
   selectSegId: function (segId, cb, multi) {
     console.log('selectSegId', segId);
@@ -520,7 +508,22 @@ var SegmentManager = {
 
     this.segments[segId] = this.segments[segId] || {};
     Object.assign(this.segments[segId], { selected: true, cb: cb, multi: !!multi });
-    workerGenerateMesh(segId);
+    workerGenerateMesh(segId, false, null, function (segId, mesh) {
+      SegmentManager.addMesh(segId, mesh, false);
+      SegmentManager.displayMesh(segId, false);
+    });
+
+    // animate to center of segment, it would be nice to animate to center of mass, also maybe only for big segments
+    // and possibly zoom out to fit the whole segment
+    var tVec = new THREE.Vector3();
+    tVec.subVectors(segInfo[segId].max, segInfo[segId].min).divideScalar(2).add(segInfo[segId].min).divideScalar(CUBE_SIZE);
+
+    tVec.x -= 0.5;
+    tVec.y -= 0.5;
+    tVec.z -= 0.5;
+
+    animateToPositionAndZoom(tVec, 200);
+
   },
 
   deselectSegId: function (segId) {
@@ -543,20 +546,22 @@ var SegmentManager = {
     this.hideMesh(segId);
   },
   displayMesh: function (segId, wireframe) {
-    if (prevHover !== undefined) {
-      SegmentManager.hideMesh(prevHover, true);
-      prevHover = undefined;
+    if (this.visibleHover !== undefined) {
+      SegmentManager.hideMesh(this.visibleHover, true);
+      this.visibleHover = undefined;
     }
 
-
     if (wireframe) {
-      console.log('show', segId);
-      prevHover = segId;
+      this.visibleHover = segId;
+
+      if (!this.segments[segId].wireframe) {
+        console.log('what a display');
+      }
 
       this.segments[segId].wireframe.material.uniforms.origin.value = this.hoverOrigin;
 
       if (this.segments[segId].tween) {
-        console.log('stop tween', segId);
+        // console.log('stop tween', segId);
         this.segments[segId].tween.stop();
       }
 
@@ -564,9 +569,16 @@ var SegmentManager = {
         wfSegments.add(this.segments[segId].wireframe);
       }
 
+      // console.log('tween in', segId);
+      // this.segments[segId].wireframe.material.uniforms.color.value = new THREE.Color(0x00FF00);
+      this.segments[segId].wireframe.material.uniforms.color.value = new THREE.Color(0xFFFF00);
+      var _this = this;
+
       this.segments[segId].tween = new TWEEN.Tween(this.segments[segId].wireframe.material.uniforms.opacity).to({ value: 1}, 150)
         .onUpdate(function () {
           needsRender = true;
+        }).onComplete(function () {
+          // _this.segments[segId].wireframe.material.uniforms.color.value = new THREE.Color(0xFFFF00);
         }).start();
 
 
@@ -579,20 +591,27 @@ var SegmentManager = {
   },
   hideMesh: function (segId, wireframe) {
     if (wireframe) {
-      console.log('hide', segId);
-
       if (this.segments[segId].tween) {
         this.segments[segId].tween.stop();
       }
 
+      if (!this.segments[segId].wireframe) {
+        console.log('what a mess');
+      }
+
+      // console.log('hide', segId);
+
+      // console.log('tween out', segId);
       var _this = this;
-      this.segments[segId].tween = new TWEEN.Tween(_this.segments[segId].wireframe.material.uniforms.opacity).to({ value: 0}, 150)
+      // this.segments[segId].wireframe.material.uniforms.color.value = new THREE.Color(0xFF0000);
+      this.segments[segId].tween = new TWEEN.Tween(this.segments[segId].wireframe.material.uniforms.opacity).to({ value: 0}, 150)
         .onUpdate(function () {
           needsRender = true;
         }).onComplete(function () {
-          console.log('oncomplete', segId);
+          // _this.segments[segId].wireframe.material.uniforms.color.value = new THREE.Color(0xFF00FF);
           wfSegments.remove(_this.segments[segId].wireframe);
-          _this.segments[segId].tween = null;
+          // _this.segments[segId].tween = null;
+          // console.log('hide complete', segId);
         }).start();
 
 
@@ -603,27 +622,19 @@ var SegmentManager = {
 
     needsRender = true;
   },
-  addMesh: function (segId, mesh, wireframe) {
-    mesh.segId = segId;
+  addMesh: function (segId, mesh) {
+    this.segments[segId].mesh = mesh;
 
-    if (wireframe) {
-      this.segments[segId].wireframe = mesh;
-      this.segments[segId].wireframe.material.uniforms.opacity.value = 0;
-    } else {
-      this.segments[segId].mesh = mesh;
+    var shader = $.extend(true, {}, Shaders.segIdPacked);
+    var u = shader.uniforms.segid.value = segId;
+    var material = new THREE.ShaderMaterial(shader);
+    material.blending = 0;
+    var im = new THREE.Mesh(mesh.geometry, material);
+    im.segId = segId;
 
-      var shader = $.extend(true, {}, Shaders.segIdPacked);
-      var u = shader.uniforms.segid.value = segId;
-      var material = new THREE.ShaderMaterial(shader);
-      material.blending = 0;
-      var im = new THREE.Mesh(mesh.geometry, material);
-      im.segId = segId;
-
-      this.segments[segId].interactiveMesh = im;
-    }
-
-    var cb = this.segments[segId].cb;
-    if (cb) cb();
+    this.segments[segId].interactiveMesh = im;
+    // var cb = this.segments[segId].cb;
+    // if (cb) cb();
   },
   // loaded: function (segId) {
   //   return this.meshes[segId] !== undefined;
@@ -1025,7 +1036,9 @@ var voxelShape = new THREE.Mesh(
 
 var wireframe = new THREE.BoxHelper(cubeShape);
 wireframe.name = "ol' wires";
-wireframe.material.color.set("#888888");
+wireframe.material.transparent = true;
+wireframe.material.color.set("#ffffff");
+wireframe.material.opacity = 0.2;
 cube.add(wireframe);
 
 var cubeContents = new THREE.Object3D();
@@ -1045,25 +1058,13 @@ var segmentInteraction = new THREE.Object3D();
 segmentInteraction.visible = false;
 cubeContents.add(segmentInteraction);
 
-// var hoverContainer = new THREE.Object3D();
-// cubeContents.add(hoverContainer);
-
-// particle system
-var pSystem = particleInit();
-
-cubeContents.add(pSystem);
-
-
-// end of particle system
-
-
 
 var controls = new THREE.RotateCubeControls(pivot, cube, camera, SegmentManager, PlaneManager);
 controls.rotateSpeed = 4.0;
   // controls.dynamicDampingFactor = 0.5;
 
-var axis = new THREE.AxisHelper( 2 );
-pivot.add(axis);
+// var axis = new THREE.AxisHelper( 2 );
+// pivot.add(axis);
 
 // for debug
 var checkPointsContainer = new THREE.Object3D();
@@ -1083,10 +1084,12 @@ lineGeo.vertices.push(new THREE.Vector3(0, 0, -1));
 var line = new THREE.Line(lineGeo, lineMat);
 // cubeContents.add(line);
 
-var test = new THREE.Mesh( new THREE.BoxGeometry( 0.1, 0.1, 0.1 ), new THREE.MeshNormalMaterial({
+var test = new THREE.Mesh( new THREE.BoxGeometry( 1 / CUBE_SIZE, 1 / CUBE_SIZE, 1 / CUBE_SIZE ), new THREE.MeshNormalMaterial({
     transparent: false,
     opacity: 1
   }));
+
+// cubeContents.add(test);
 // test.position.set(0, 0, 1);
 // planes[0].add(test);
 
@@ -1351,15 +1354,6 @@ function selectNeighboringSegment(mock) {
   var delta = new THREE.Vector3().subVectors(pt2, pt1);
   delta.normalize();
 
-  // var checkVoxels = checkPointsContainer.children;
-  // for (var i = checkVoxels.length - 1; i >= 0; i--) {
-  //   checkPointsContainer.remove(checkVoxels[i]);
-  // };
-
-  // lineGeo.vertices[0].set(pt1.x, pt1.y, pt1.z);
-  // lineGeo.vertices[1].set(pt2.x, pt2.y, pt2.z);
-  // lineGeo.verticesNeedUpdate = true;
-
   for (var i = 0; i < 10; i++) {
     // todo, do I want to round or floor? I think floor makes more sense for pixel
     var x = Math.floor((pt1.x + delta.x * 1/CUBE_SIZE * i) * CUBE_SIZE);
@@ -1383,15 +1377,17 @@ function selectNeighboringSegment(mock) {
       return;
     }
 
+    var origin = new THREE.Vector3(x, y, z);
+
     if (segId !== 0 && !SegmentManager.isSelected(segId) && !SegmentManager.isSeed(segId)) {
       if (mock === 3) {
         SegmentManager.selectSegId(segId, function () {}, true)
       } else if (mock) {
-        SegmentManager.hoverSegId(segId, {x: x, y: y, z: z});
+        SegmentManager.hoverSegId(segId, origin);
       } else {
-        SegmentManager.hoverSegId(segId, {x: x, y: y, z: z});
+        SegmentManager.hoverSegId(segId, origin);
         SegmentManager.selectSegId(segId, function () {
-          SegmentManager.hoverSegId(null);
+          // SegmentManager.hoverSegId(null);
         });
       }
       return;
@@ -1471,7 +1467,6 @@ function tileDelta(delta) {
     cube.position[currentPlane.str] = -currentPlane.plane.position[currentPlane.str] + 0.5;
   }
 }
-
 
 var tVec = new THREE.Vector3();
 
@@ -1602,16 +1597,6 @@ function handleInput() {
 
     needsRender = true;
   }
-  
-  if (key('ctrl', PRESSED)) {
-    pSystem.visible = false;
-    needsRender = true;
-  }
-  
-  if (key('ctrl', RELEASED)) {
-    pSystem.visible = true;
-    needsRender = true;
-  }
 
   if (key('a', PRESSED)) {
     SegmentManager.opacity = 0;
@@ -1684,32 +1669,43 @@ function animate() {
 }
 requestAnimationFrame(animate);
 
+
 window.h = function (segId) {
+  if (Array.isArray(segId)) {
+    for (let i = 0; i < segId.length; i++) {
+      setTimeout(function () {
+        h(segId[i])
+      }, i * 10);
+    }
+    return;
+  }
+
+
   var tVec = new THREE.Vector3();
 
   tVec.subVectors(segInfo[segId].max, segInfo[segId].min).divideScalar(2);
 
   tVec.add(segInfo[segId].min);
 
-  SegmentManager.hoverSegId(segId, tVec);
+  SegmentManager.hoverSegId(segId, new THREE.Vector3().copy(tVec));
 
   SegmentManager.setHoverOrigin(tVec.divideScalar(CUBE_SIZE));
 
 
 
-  var tVec2 = new THREE.Vector3();
-  tVec2.subVectors(segInfo[segId].max, segInfo[segId].min).divideScalar(CUBE_SIZE);
+  // var tVec2 = new THREE.Vector3();
+  // tVec2.subVectors(segInfo[segId].max, segInfo[segId].min).divideScalar(CUBE_SIZE);
 
-  var cubeShape = new THREE.Mesh(
-    new THREE.BoxGeometry(tVec2.x, tVec2.y, tVec2.z),
-    new THREE.MeshNormalMaterial({visible: false})
-  );
+  // var cubeShape = new THREE.Mesh(
+  //   new THREE.BoxGeometry(tVec2.x, tVec2.y, tVec2.z),
+  //   new THREE.MeshNormalMaterial({visible: false})
+  // );
 
-  var wireframe = new THREE.BoxHelper(cubeShape);
-  wireframe.position.copy(tVec);
-  // wireframe.name = "ol' wires";
-  // wireframe.material.color.set("#888888");
-  cubeContents.add(wireframe);
+  // var wireframe = new THREE.BoxHelper(cubeShape);
+  // wireframe.position.copy(tVec);
+  // // wireframe.name = "ol' wires";
+  // // wireframe.material.color.set("#888888");
+  // cubeContents.add(wireframe);
 };
 
 window.s = function (segId) {

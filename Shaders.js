@@ -62,6 +62,7 @@ Shaders = {
 	wireframe: {
 		derivatives: true,
 		uniforms: {
+			color: { type: "c", value: new THREE.Color( 0xffffff ) },
 			origin: { type: "v3", value: new THREE.Vector3( 0, 0, 0 ) },
 			opacity: { type: "f", value: 1.0 },
 		},
@@ -85,6 +86,7 @@ Shaders = {
 			varying vec3 vCenter;
 			varying float dTOS;
 			uniform float opacity;
+			uniform vec3 color;
 
 			float edgeFactor() {
 
@@ -95,8 +97,8 @@ Shaders = {
 			}
 
 			void main() {
-				gl_FragColor.rgb = vec3(1.0, 1.0, 0.0);
-				gl_FragColor.a = opacity * (1.0 - dTOS) * (1.0 - edgeFactor()) * 0.5;
+				gl_FragColor.rgb = color;
+				gl_FragColor.a = max(0.0, opacity * (1.0 - dTOS)) * (1.0 - edgeFactor()) * 0.5;
 			}
 		`
 	},

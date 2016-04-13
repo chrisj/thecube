@@ -1,11 +1,12 @@
 importScripts('./asm/marching_cubes.js');
 
+// TODO, does this work? (specifying number)
 var marchingCubes = Module.cwrap(
-  'marching_cubes', 'number', ['number', 'number']
+  'marching_cubes', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']
 );
 
 var marchingCubesWireframe = Module.cwrap(
-  'marching_cubes_wireframe', 'number', ['number', 'number']
+  'marching_cubes_wireframe', 'number', ['number', 'number', 'number', 'number', 'number', 'number']
 );
 
 var pixelToSegIdPtr;
@@ -19,8 +20,8 @@ function setVolumeData(data) {
 	pixelToSegIdPtr = dataHeap.byteOffset;
 }
 
-function generateMeshForSegId(segId, origin, callback) {
-	var meshPtr = marchingCubes(segId, pixelToSegIdPtr);
+function generateMeshForSegId(segId, min, max, callback) {
+	var meshPtr = marchingCubes(segId, min.x, min.y, min.z, max.x, max.y, max.z, pixelToSegIdPtr);
 
 	var arrSizeBytes = new Float32Array(Module.HEAPU8.buffer, meshPtr, 1)[0] * 4;
 
@@ -29,13 +30,13 @@ function generateMeshForSegId(segId, origin, callback) {
 	var positions = Module.HEAPU8.buffer.slice(start, start += arrSizeBytes);
 	var normals = Module.HEAPU8.buffer.slice(start, start += arrSizeBytes);
 
-	postMessage({ callback: callback, segId: segId, positions: positions, normals: normals }, [positions, normals]);
+	postMessage({ callback: callback, msg: { segId: segId, positions: positions, normals: normals } }, [positions, normals]);
 
 	Module._free(meshPtr);
 }
 
 function generateWireframeForSegId(segId, origin, callback) {
-	var meshPtr = marchingCubesWireframe(segId, origin.x, origin.y, origin.z, pixelToSegIdPtr);
+	var meshPtr = marchingCubesWireframe(segId, origin.x, origin.y, origin.z, 100, pixelToSegIdPtr);
 
 	var arrSizeBytes = new Float32Array(Module.HEAPU8.buffer, meshPtr, 1)[0] * 4;
 
@@ -43,7 +44,7 @@ function generateWireframeForSegId(segId, origin, callback) {
 
 	var positions = Module.HEAPU8.buffer.slice(start, start += arrSizeBytes);
 
-	postMessage({ callback: callback, wireframe: true, segId: segId, positions: positions }, [positions]);
+	postMessage({ callback: callback, msg: { wireframe: true, segId: segId, positions: positions } }, [positions]);
 
 	Module._free(meshPtr);
 }
@@ -51,10 +52,12 @@ function generateWireframeForSegId(segId, origin, callback) {
 onmessage = function (e) {
 	if (e.data.name === 'volume') {
 		setVolumeData(e.data.data);
-	} else if (e.data.name === 'segId') {
-
-		var meshFunc = e.data.wireframe ? generateWireframeForSegId : generateMeshForSegId;
-		meshFunc(e.data.data, e.data.origin, e.data.callback);
+	} else if (e.data.msg.name === 'segId') {
+		if (e.data.msg.wireframe) {
+			generateWireframeForSegId(e.data.msg.data, e.data.msg.origin, e.data.callback);
+		} else {
+			generateMeshForSegId(e.data.msg.data, e.data.msg.min, e.data.msg.max, e.data.callback);
+		}
 	} else {
 		console.log('invalid message', e);
 	}
