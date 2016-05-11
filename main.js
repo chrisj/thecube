@@ -8,7 +8,7 @@ MCWorker.callbacks = {};
 MCWorker.count = 0;
 
 MCWorker.onmessage = function (e) {
-  if (e.data.callback) {
+  if (e.data.callback !== undefined) {
     MCWorker.callbacks[e.data.callback](e.data.msg);
   }
 };
@@ -83,6 +83,7 @@ function playTask(task, cb) {
 
   function loadTaskData(done) {
     loadTiles(function () {
+      console.log('finished loading tiles');
       setupWorker();
 
       loadSeedMeshes();
@@ -253,18 +254,38 @@ function camInfo() {
   // });
 }
 
+var startMarch;
+
 
 function workerGenerateMesh(segId, wireframe, origin, callback) {
   var msg = { name: 'segId', wireframe: wireframe, origin: origin, data: segId, min: SegmentManager.segments[segId].min, max: SegmentManager.segments[segId].max };
 
+  console.log('asking for mesh', segId);
+
+  if (segId === 1) {
+    startMarch = Date.now();
+  }
+
   var unique = MCWorker.count++;
   MCWorker.callbacks[unique] = function (data) {
+    if (data.segId === maxSegId) {
+      console.log('March time', Date.now() - startMarch);
+    }
+
     var segGeo = new THREE.BufferGeometry();
+
+    segGeo.setIndex( new THREE.BufferAttribute( new Uint16Array(data.triangles), 1 ) );
+
     segGeo.addAttribute('position', new THREE.BufferAttribute(new Float32Array(data.positions), 3));
 
-    if (data.normals) {
-      segGeo.addAttribute('normal', new THREE.BufferAttribute(new Float32Array(data.normals), 3));
-      segGeo.normalizeNormals();
+    segGeo.computeVertexNormals();
+
+    var idxArr = segGeo.index.array;
+    var posArr = segGeo.attributes.position.array;
+
+
+    for (let i = 0; i < posArr.length; i++) {
+      posArr[i] /= 256;
     }
 
     var meshFunc = wireframe ? generateWireframeForSegment : generateMeshForSegment;
@@ -317,7 +338,7 @@ function generateMeshForSegment(segId, segGeo) {
   }
 
   var shader = $.extend(true, {
-    transparent: false
+    transparent: false,
     // side: THREE.DoubleSide
   }, Shaders.idPacked);
   
@@ -399,6 +420,7 @@ var SegmentManager = {
     var _this = this;
 
     function loadSeedMeshes() {
+      console.log('load seeds', _this.seeds);
       _this.seeds.forEach(function (segId) {
         workerGenerateMesh(segId, false, null, function (segId, mesh) {
           SegmentManager.addMesh(segId, mesh, false);
@@ -491,8 +513,6 @@ var SegmentManager = {
     this.hover = segId;
   },
   selectSegId: function (segId, cb, multi) {
-    console.log('selectSegId', segId);
-
     if (multi && this.segments[segId].size > 5000) {
       return;
     }
@@ -509,14 +529,14 @@ var SegmentManager = {
 
     // animate to center of segment, it would be nice to animate to center of mass, also maybe only for big segments
     // and possibly zoom out to fit the whole segment
-    var tVec = new THREE.Vector3();
-    tVec.copy(SegmentManager.segments[segId].centerOfMass).divideScalar(SegmentManager.segments[segId].size).divideScalar(CUBE_SIZE);
+    // var tVec = new THREE.Vector3();
+    // tVec.copy(SegmentManager.segments[segId].centerOfMass).divideScalar(SegmentManager.segments[segId].size).divideScalar(CUBE_SIZE);
 
-    tVec.x -= 0.5;
-    tVec.y -= 0.5;
-    tVec.z -= 0.5;
+    // tVec.x -= 0.5;
+    // tVec.y -= 0.5;
+    // tVec.z -= 0.5;
 
-    animateToPositionAndZoom(tVec, 200);
+    // animateToPositionAndZoom(tVec, 200);
 
   },
 
@@ -946,7 +966,7 @@ var renderer = new THREE.WebGLRenderer({
   // preserveDrawingBuffer: true, // TODO, maybe this is sometimes required if you use ctx.readpixels but since we call it immediately after render, it isn't actually required
   alpha: false,
 });
-// renderer.state.setDepthTest(false); // TODO, why did we do this?
+renderer.state.setDepthTest(true); // TODO, why did we do this?
 
 renderer.setPixelRatio(window.devicePixelRatio);
 
@@ -1555,6 +1575,8 @@ function resetZoom() {
   animateToPositionAndZoom(new THREE.Vector3(0, 0, 0), 1, true);
 }
 
+var maxSegId = -1;
+
 
 function showAllSegs() {
   if (showAllSegs.started) {
@@ -1562,13 +1584,13 @@ function showAllSegs() {
   }
   showAllSegs.started = true;
 
-  var segCount = -1;
-
   for (var i = 0; i < pixelToSegId.length; i++) {
-    segCount = Math.max(segCount, pixelToSegId[i]);
+    maxSegId = Math.max(maxSegId, pixelToSegId[i]);
   }
 
-  for (var i = 1; i < segCount; i++) {
+  console.log(maxSegId);
+
+  for (var i = 1; i <= maxSegId; i++) {
     SegmentManager.selectSegId(i);
   }
 }

@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <math.h>
+#include <cmath>
 #include <string.h>
 #include <stdio.h>
 // #include <time.h>
@@ -43,7 +44,7 @@ static const int triTable[256*16] = {
 3, 10, 1, 11, 10, 3, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1,
 0, 10, 1, 0, 8, 10, 8, 11, 10, - 1, - 1, - 1, - 1, - 1, - 1, - 1,
 3, 9, 0, 3, 11, 9, 11, 10, 9, - 1, - 1, - 1, - 1, - 1, - 1, - 1,
-9, 8, 10, 10, 8, 11, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1,
+9, 8, 10, 10, 8, 11, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, // this is flat across
 4, 7, 8, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1,
 4, 3, 0, 7, 3, 4, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1,
 0, 1, 9, 8, 4, 7, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1, - 1,
@@ -329,46 +330,110 @@ static const int EDGE_OFFSET_MEM[12 * 2] = {
 
 static uint8_t counts[TOTAL_VOXELS];
 static int8_t gradient[TOTAL_VOXELS * 3];
+static float blur[TOTAL_VOXELS];
 
 // static unsigned char* counts;
 // static char* gradient;
 
 
-float* marching_cubes(int segId, int startX, int startY, int startZ, int endX, int endY, int endZ, uint16_t* pixelToSegId) {
-	// printf("marching_cubes(%d)\n", segId);
-
-	// clock_t verybegin, begin, end;
-
-	// verybegin = clock();
-
-	// double time_spent;
-
+float* marching_cubes(uint16_t* pixelToSegId, int segId, int startX, int startY, int startZ, int endX, int endY, int endZ) {
 	int triCount = 0;
 
+	printf("hi %d\n", segId);
+
 	// step 1
-
-	// begin = clock();
-
 	const int close = 10;
 	const int med = 7;
 	const int far = 6;
 
 	int x, y, z;
 
-	// n
-	startX--;
-	startY--;
-	startZ--;
-
 	int X_WIN_SIZE = endX - startX + 1;
 	int Y_WIN_SIZE = endY - startY + 1;
 
 	int i = endX + endY * X_DIM + endZ * X_DIM * Y_DIM;
 
+
+	printf("we are here %d\n", segId);
+
+	const float FALLOFF = sqrt(4);
+
+	printf("first sqrt %.4f\n", FALLOFF);
+
+	const float dist0 = 1;
+	const float dist1 = 1 - sqrt(1) / FALLOFF;
+	const float dist2 = 1 - sqrt(2) / FALLOFF;
+	const float dist3 = 1 - sqrt(3) / FALLOFF;
+
+	printf("finished distances %.4f %.4f %.4f %.4f\n", dist0, dist1, dist2, dist3);
+
+	const float BLUR_SUM = dist0 + dist1 * 6 + dist2 * 12 + dist3 * 8;
+
+	printf("blurring %d pixels\n", X_WIN_SIZE * Y_WIN_SIZE * (endZ - startZ + 1));
+
 	for (z = endZ; z >= startZ; --z) {
 		for (y = endY; y >= startY; --y) {
 			for (x = endX; x >= startX; --x) {
 				if (pixelToSegId[i] == segId) {
+					blur[i] += dist0;
+					blur[i - X_OFF] += dist1;
+					blur[i + X_OFF] += dist1;
+					blur[i - Y_OFF] += dist1;
+					blur[i + Y_OFF] += dist1;
+					blur[i - Z_OFF] += dist1;
+					blur[i + Z_OFF] += dist1;
+					blur[i - X_OFF - Y_OFF] += dist2;
+					blur[i + X_OFF - Y_OFF] += dist2;
+					blur[i - X_OFF + Y_OFF] += dist2;
+					blur[i + X_OFF + Y_OFF] += dist2;
+					blur[i - X_OFF - Z_OFF] += dist2;
+					blur[i + X_OFF - Z_OFF] += dist2;
+					blur[i - X_OFF + Z_OFF] += dist2;
+					blur[i + X_OFF + Z_OFF] += dist2;
+					blur[i - Y_OFF - Z_OFF] += dist2;
+					blur[i + Y_OFF - Z_OFF] += dist2;
+					blur[i - Y_OFF + Z_OFF] += dist2;
+					blur[i + Y_OFF + Z_OFF] += dist2;
+					blur[i - X_OFF - Y_OFF - Z_OFF] += dist3;
+					blur[i + X_OFF - Y_OFF - Z_OFF] += dist3;
+					blur[i - X_OFF + Y_OFF - Z_OFF] += dist3;
+					blur[i + X_OFF + Y_OFF - Z_OFF] += dist3;
+					blur[i - X_OFF - Y_OFF + Z_OFF] += dist3;
+					blur[i + X_OFF - Y_OFF + Z_OFF] += dist3;
+					blur[i - X_OFF + Y_OFF + Z_OFF] += dist3;
+					blur[i + X_OFF + Y_OFF + Z_OFF] += dist3;
+				}
+				--i;
+			}
+			i = i + X_WIN_SIZE - Y_OFF;
+		}
+		i = i + Y_WIN_SIZE * Y_OFF - Z_OFF;
+		printf("i %d\n", i);
+	}
+
+	// need to move search window out because isosurface may haved moved as a result of blurring
+
+	// move start by two since marching overshoots
+	startX -= 2;
+	startY -= 2;
+	startZ -= 2;
+
+	endX++;
+	endY++;
+	endZ++;
+
+	X_WIN_SIZE = endX - startX + 1;
+	Y_WIN_SIZE = endY - startY + 1;
+
+	printf("hi2 %d\n", segId);
+
+	i = endX + endY * X_DIM + endZ * X_DIM * Y_DIM;
+
+	for (z = endZ; z >= startZ; --z) {
+		for (y = endY; y >= startY; --y) {
+			for (x = endX; x >= startX; --x) {
+				blur[i] /= BLUR_SUM;
+				if (blur[i] > 0.5) {
 					counts[i                        ] |= 1;
 					counts[i - X_OFF                ] |= 2;
 					counts[i         - Y_OFF        ] |= 16;
@@ -377,136 +442,8 @@ float* marching_cubes(int segId, int startX, int startY, int startZ, int endX, i
 					counts[i - X_OFF         - Z_OFF] |= 4;
 					counts[i         - Y_OFF - Z_OFF] |= 128;
 					counts[i - X_OFF - Y_OFF - Z_OFF] |= 64;
-
-					// calculate gradient
-
-					// x
-					gradient[(i + X_OFF) * 3] += close;
-					gradient[(i - X_OFF) * 3] -= close;
-
-					// y
-					gradient[(i + Y_OFF) * 3 + 1] += close;
-					gradient[(i - Y_OFF) * 3 + 1] -= close;
-
-					// z
-					gradient[(i + Z_OFF) * 3 + 2] += close;
-					gradient[(i - Z_OFF) * 3 + 2] -= close;// right down (+ +)
-
-					// right down (+ +)
-					gradient[(i + X_OFF + Y_OFF)*3] += med; 
-					gradient[(i + X_OFF + Y_OFF)*3+1] += med;
-
-					// right down forward (+ + +)
-					gradient[(i + X_OFF + Y_OFF + Z_OFF)*3] += far; 
-					gradient[(i + X_OFF + Y_OFF + Z_OFF)*3+1] += far;
-					gradient[(i + X_OFF + Y_OFF + Z_OFF)*3+2] += far;
-
-					// right down back (+ + -)
-					gradient[(i + X_OFF + Y_OFF - Z_OFF)*3] += far; 
-					gradient[(i + X_OFF + Y_OFF - Z_OFF)*3+1] += far;
-					gradient[(i + X_OFF + Y_OFF - Z_OFF)*3+2] -= far;
-
-					// left down (- +)
-					gradient[(i - X_OFF + Y_OFF)*3] -= med; 
-					gradient[(i - X_OFF + Y_OFF)*3+1] += med;
-
-					// left down forward (- + +)
-					gradient[(i - X_OFF + Y_OFF + Z_OFF)*3] -= far; 
-					gradient[(i - X_OFF + Y_OFF + Z_OFF)*3+1] += far;
-					gradient[(i - X_OFF + Y_OFF + Z_OFF)*3+2] += far;
-
-					// left down back (- + -)
-					gradient[(i - X_OFF + Y_OFF - Z_OFF)*3] -= far; 
-					gradient[(i - X_OFF + Y_OFF - Z_OFF)*3+1] += far;
-					gradient[(i - X_OFF + Y_OFF - Z_OFF)*3+2] -= far;
-
-					// left up (- -)
-					gradient[(i - X_OFF - Y_OFF)*3] -= med; 
-					gradient[(i - X_OFF - Y_OFF)*3+1] -= med;
-
-					// left up forward (- - +)
-					gradient[(i - X_OFF - Y_OFF + Z_OFF)*3] -= far; 
-					gradient[(i - X_OFF - Y_OFF + Z_OFF)*3+1] -= far;
-					gradient[(i - X_OFF - Y_OFF + Z_OFF)*3+2] += far;
-
-					// left up back (- - -)
-					gradient[(i - X_OFF - Y_OFF - Z_OFF)*3] -= far; 
-					gradient[(i - X_OFF - Y_OFF - Z_OFF)*3+1] -= far;
-					gradient[(i - X_OFF - Y_OFF - Z_OFF)*3+2] -= far;
-
-					// right up (+ -)
-					gradient[(i + X_OFF - Y_OFF)*3] += med; 
-					gradient[(i + X_OFF - Y_OFF)*3+1] -= med;
-
-					// right up forward (+ - +)
-					gradient[(i + X_OFF - Y_OFF + Z_OFF)*3] += far; 
-					gradient[(i + X_OFF - Y_OFF + Z_OFF)*3+1] -= far;
-					gradient[(i + X_OFF - Y_OFF + Z_OFF)*3+2] += far;
-
-					// right up back (+ - -)
-					gradient[(i + X_OFF - Y_OFF - Z_OFF)*3] += far; 
-					gradient[(i + X_OFF - Y_OFF - Z_OFF)*3+1] -= far;
-					gradient[(i + X_OFF - Y_OFF - Z_OFF)*3+2] -= far;
-
-					// right down (+ +)
-					gradient[(i + X_OFF + Y_OFF)*3] += med; 
-					gradient[(i + X_OFF + Y_OFF)*3+1] += med;
-
-					// right down forward (+ + +)
-					gradient[(i + X_OFF + Y_OFF + Z_OFF)*3] += far; 
-					gradient[(i + X_OFF + Y_OFF + Z_OFF)*3+1] += far;
-					gradient[(i + X_OFF + Y_OFF + Z_OFF)*3+2] += far;
-
-					// right down back (+ + -)
-					gradient[(i + X_OFF + Y_OFF - Z_OFF)*3] += far; 
-					gradient[(i + X_OFF + Y_OFF - Z_OFF)*3+1] += far;
-					gradient[(i + X_OFF + Y_OFF - Z_OFF)*3+2] -= far;
-
-					// left down (- +)
-					gradient[(i - X_OFF + Y_OFF)*3] -= med; 
-					gradient[(i - X_OFF + Y_OFF)*3+1] += med;
-
-					// left down forward (- + +)
-					gradient[(i - X_OFF + Y_OFF + Z_OFF)*3] -= far; 
-					gradient[(i - X_OFF + Y_OFF + Z_OFF)*3+1] += far;
-					gradient[(i - X_OFF + Y_OFF + Z_OFF)*3+2] += far;
-
-					// left down back (- + -)
-					gradient[(i - X_OFF + Y_OFF - Z_OFF)*3] -= far; 
-					gradient[(i - X_OFF + Y_OFF - Z_OFF)*3+1] += far;
-					gradient[(i - X_OFF + Y_OFF - Z_OFF)*3+2] -= far;
-
-					// left up (- -)
-					gradient[(i - X_OFF - Y_OFF)*3] -= med; 
-					gradient[(i - X_OFF - Y_OFF)*3+1] -= med;
-
-					// left up forward (- - +)
-					gradient[(i - X_OFF - Y_OFF + Z_OFF)*3] -= far; 
-					gradient[(i - X_OFF - Y_OFF + Z_OFF)*3+1] -= far;
-					gradient[(i - X_OFF - Y_OFF + Z_OFF)*3+2] += far;
-
-					// left up back (- - -)
-					gradient[(i - X_OFF - Y_OFF - Z_OFF)*3] -= far; 
-					gradient[(i - X_OFF - Y_OFF - Z_OFF)*3+1] -= far;
-					gradient[(i - X_OFF - Y_OFF - Z_OFF)*3+2] -= far;
-
-					// right up (+ -)
-					gradient[(i + X_OFF - Y_OFF)*3] += med; 
-					gradient[(i + X_OFF - Y_OFF)*3+1] -= med;
-
-					// right up forward (+ - +)
-					gradient[(i + X_OFF - Y_OFF + Z_OFF)*3] += far; 
-					gradient[(i + X_OFF - Y_OFF + Z_OFF)*3+1] -= far;
-					gradient[(i + X_OFF - Y_OFF + Z_OFF)*3+2] += far;
-
-					// right up back (+ - -)
-					gradient[(i + X_OFF - Y_OFF - Z_OFF)*3] += far; 
-					gradient[(i + X_OFF - Y_OFF - Z_OFF)*3+1] -= far;
-					gradient[(i + X_OFF - Y_OFF - Z_OFF)*3+2] -= far;
 				}
-
 				triCount += triCountTable[counts[i]];
-
 
 				--i;
 			}
@@ -515,36 +452,23 @@ float* marching_cubes(int segId, int startX, int startY, int startZ, int endX, i
 		i = i + Y_WIN_SIZE * Y_OFF - Z_OFF;
 	}
 
-	// end = clock();
-
-	// time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
-
-	// printf("march, time = %fms\n", time_spent);
-
-	// begin = clock();
-
 	// count vertices, allocate memory
-	
-	int vertexArrCount = triCount * 3 * 3;
+	int vertexCount = triCount * 3;
+
+	printf("triCount %d\n", triCount);
 
 	// first element is length of rest of array
 	float *meshData;
-	meshData = (float*)calloc((1 + vertexArrCount * 2), sizeof(float));
+	meshData = (float*)calloc((1 + vertexCount * 3 * 2), sizeof(float));
 
-	meshData[0] = vertexArrCount;
+	meshData[0] = vertexCount;
 
 	float *meshVertices = meshData + 1;
-	float *meshNormals = meshVertices + vertexArrCount;
+	// float *meshNormals = meshVertices + vertexArrCount;
 
-	// end = clock();
-
-	// time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
-
-	// printf("allocate mesh memory, time = %fms\n", time_spent);
+	printf("hi3 %d\n", segId);
 
 	int startIdx = 0;
-
-	float off_x, off_y, off_z;
 
 	uint8_t indvTriCount;
 	uint8_t bufferIdx;
@@ -556,7 +480,15 @@ float* marching_cubes(int segId, int startX, int startY, int startZ, int endX, i
 
 	int vox1, vox2;
 
-	// begin = clock();
+	float t;
+	float p1;
+	float p2;
+	int temp;
+	float tempF;
+
+	int xt, yt, zt;
+
+	// int finalTriCount = 0;
 
 	i = startX + startY * X_DIM + startZ * X_DIM * Y_DIM;
 
@@ -568,29 +500,52 @@ float* marching_cubes(int segId, int startX, int startY, int startZ, int endX, i
 				indvTriCount = triCountTable[cubeIndex];
 				cubeIndex <<= 4;
 
-				// printf("check: %d %d %d  count %d\n", x, y, z, indvTriCount);
-
 				for (m = 0; m < indvTriCount; ++m) {
 					for (v = 0; v < 3; ++v) {
 						bufferIdx = triTable[cubeIndex];
 
-						off_x = EDGE_OFFSET_WORLD[bufferIdx * 3];
-						off_y = EDGE_OFFSET_WORLD[bufferIdx * 3 + 1];
-						off_z = EDGE_OFFSET_WORLD[bufferIdx * 3 + 2];
+						vox1 = (i + EDGE_OFFSET_MEM[bufferIdx * 2]) * 1;
+						vox2 = (i + EDGE_OFFSET_MEM[bufferIdx * 2 + 1]) * 1;
 
-						meshVertices[startIdx]   = (x + off_x) / X_DIM;
-						meshVertices[startIdx+1] = (y + off_y) / Y_DIM;
-						meshVertices[startIdx+2] = (z + off_z) / Z_DIM;
+						p1 = blur[vox1];
+						p2 = blur[vox2];
 
-						vox1 = (i + EDGE_OFFSET_MEM[bufferIdx * 2]) * 3;
-						vox2 = (i + EDGE_OFFSET_MEM[bufferIdx * 2 + 1]) * 3;
+						if (p2 < p1) {
+							temp = vox2;
+							vox2 = vox1;
+							vox1 = temp;
 
-						meshNormals[startIdx]   = gradient[vox1]     + gradient[vox2];
-						meshNormals[startIdx+1] = gradient[vox1 + 1] + gradient[vox2 + 1];
-						meshNormals[startIdx+2] = gradient[vox1 + 2] + gradient[vox2 + 2];
+							tempF = p2;
+							p2 = p1;
+							p1 = tempF;
+						}
+
+						t = (0.5 - p1) / (p2 - p1);
+
+						zt = floor(vox1 / Z_OFF);
+						yt = floor((vox1 - zt * Z_OFF) / Y_OFF);
+						xt = vox1 % Y_OFF;
+
+						meshVertices[startIdx]   += xt * (1.0 - t) / X_DIM;
+						meshVertices[startIdx+1] += yt * (1.0 - t) / Y_DIM;
+						meshVertices[startIdx+2] += zt * (1.0 - t) / Z_DIM;
+
+						zt = floor(vox2 / Z_OFF);
+						yt = floor((vox2 - zt * Z_OFF) / Y_OFF);
+						xt = vox2 % Y_OFF;
+
+						meshVertices[startIdx]   += xt * t / X_DIM;
+						meshVertices[startIdx+1] += yt * t / Y_DIM;
+						meshVertices[startIdx+2] += zt * t / Z_DIM;
+
+						// meshNormals[startIdx]   = gradient[vox1 * 3]     * (1.0 - t) + gradient[vox2 * 3]     * t;
+						// meshNormals[startIdx+1] = gradient[vox1 * 3 + 1] * (1.0 - t) + gradient[vox2 * 3 + 1] * t;
+						// meshNormals[startIdx+2] = gradient[vox1 * 3 + 2] * (1.0 - t) + gradient[vox2 * 3 + 2] * t;
 						cubeIndex++;
 						startIdx += 3;
 					}
+
+					// finalTriCount++;
 				}
 
 				++i;
@@ -600,30 +555,34 @@ float* marching_cubes(int segId, int startX, int startY, int startZ, int endX, i
 		i = i - Y_WIN_SIZE * Y_OFF + Z_OFF;
 	}
 
-	// end = clock();
+	printf("hi4 %d\n", segId);
 
-	// time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
+	// TODO, just added this, needs thought
+	// startX--;
+	// startY--;
+	// startZ--;
 
-	// printf("triangulate, time = %fms\n", time_spent);
+	// endX++;
+	// endY++;
+	// endZ++;
+
+	// X_WIN_SIZE = endX - startX + 1;
+	// Y_WIN_SIZE = endY - startY + 1;
 
 
 	i = startX + startY * X_DIM + startZ * X_DIM * Y_DIM;
 
 	// clean up counts and gradient
-
-	// begin = clock();
-
-
 	int gIdx;
 	for (z = startZ; z <= endZ; ++z) {
 		for (y = startY; y <= endY; ++y) {
 			for (x = startX; x <= endX; ++x) {
 				counts[i] = 0;
-
+				blur[i] = 0;
 				gIdx = i * 3;
-				gradient[gIdx] = 0;
-				gradient[gIdx+1] = 0;
-				gradient[gIdx+2] = 0;
+				// gradient[gIdx] = 0;
+				// gradient[gIdx+1] = 0;
+				// gradient[gIdx+2] = 0;
 
 				++i;
 			}
@@ -632,18 +591,25 @@ float* marching_cubes(int segId, int startX, int startY, int startZ, int endX, i
 		i = i - Y_WIN_SIZE * Y_OFF + Z_OFF;
 	}
 
-	// end = clock();
+	printf("hi5 %d\n", segId);
 
-	// time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
+	// sort points
 
-	// printf("mem cleanup, time = %fms\n", time_spent);
+	// create index/allocate new memory, free old
 
-	// time_spent = (double)(end - verybegin) * 1000 / CLOCKS_PER_SEC;
-
-	// printf("total, time = %fms, tris = %d\n", time_spent, triCount);
 
 	return meshData;
 }
+
+
+
+
+
+
+
+
+
+
 
 static uint8_t wf_counts[TOTAL_VOXELS];
 
