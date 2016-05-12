@@ -82,7 +82,8 @@ struct dmc_result {
 	uint32_t vertCount;
 
 	float *vertices;
-	uint16_t *triangles;
+	float *normals;
+	uint32_t *triangles;
 };
 
 dmc_result* dual_marching_cubes(uint16_t* voxelToSegId, int segId) {
@@ -117,11 +118,14 @@ dmc_result* dual_marching_cubes(uint16_t* voxelToSegId, int segId) {
 	float *vertices;
 	vertices = (float*)calloc((vertCount * 3), sizeof(float));
 
-	// float *normals;
-	// normals = (float*)calloc((vertCount * 3), sizeof(float));
+	float *normals;
+	normals = (float*)calloc((vertCount * 3), sizeof(float));
 
-	uint16_t *triangles;
-	triangles = (uint16_t*)calloc((quadCount * 2 * 3), sizeof(uint16_t));
+	float *normalsSmoothed;
+	normalsSmoothed = (float*)calloc((vertCount * 3), sizeof(float));
+
+	uint32_t *triangles;
+	triangles = (uint32_t*)calloc((quadCount * 2 * 3), sizeof(uint32_t));
 
 	int curVertCount = 0;
 	int curQuadCount = 0;
@@ -162,17 +166,21 @@ dmc_result* dual_marching_cubes(uint16_t* voxelToSegId, int segId) {
 
 	int i = startX + startY * X_DIM + startZ * X_DIM * Y_DIM;
 
-	// for (z = startZ; z <= endZ; ++z) {
-	// 	for (y = startY; y <= endY; ++y) {
-	// 		for (x = startX; x <= endX; ++x) {
+	float u0, u1, u2, v0, v1, v2;
+
+	float nx, ny, nz;
+
+	for (z = startZ; z <= endZ; ++z) {
+		for (y = startY; y <= endY; ++y) {
+			for (x = startX; x <= endX; ++x) {
 				// counts[i - X_OFF - Y_OFF - Z_OFF - 1] = 0; // TODO, this will be out of bounds at 1,1,1
-		for (int i = 0; i < TOTAL_VOXELS; ++i) {
+		// for (int i = 0; i < TOTAL_VOXELS; ++i) {
 				cubeIndex = counts[i];
 
 				if (cubeIndex != 0 && cubeIndex != 255) {
-					z = floor(i / Z_OFF);
-					y = floor((i - z * Z_OFF) / Y_OFF);
-					x = i % Y_OFF;
+					// z = floor(i / Z_OFF);
+					// y = floor((i - z * Z_OFF) / Y_OFF);
+					// x = i % Y_OFF;
 
 					vertIdx[i] = curVertCount;
 
@@ -180,9 +188,9 @@ dmc_result* dual_marching_cubes(uint16_t* voxelToSegId, int segId) {
 					for (int j = 0; j < vertsForCube; j++) {
 						vertOffset = cubeIndex * 12 + j;
 
-						vertices[curVertCount*3+0] = x + DM_VERTICES[vertOffset];
-						vertices[curVertCount*3+1] = y + DM_VERTICES[vertOffset+1];
-						vertices[curVertCount*3+2] = z + DM_VERTICES[vertOffset+2];
+						vertices[curVertCount*3+0] = (x + DM_VERTICES[vertOffset]) / 256;
+						vertices[curVertCount*3+1] = (y + DM_VERTICES[vertOffset+1]) / 256;
+						vertices[curVertCount*3+2] = (z + DM_VERTICES[vertOffset+2]) / 256;
 						curVertCount++;
 					}
 
@@ -244,15 +252,79 @@ dmc_result* dual_marching_cubes(uint16_t* voxelToSegId, int segId) {
 						curQuadCount++;
 
 						// calculate normal
+						u0 = rc4VX - rc1VX;
+						u1 = rc4VY - rc1VY;
+						u2 = rc4VZ - rc1VZ;
 
+						v0 = rc2VX - rc1VX;
+						v1 = rc2VY - rc1VY;
+						v2 = rc2VZ - rc1VZ;
+
+						nx = u1*v2 - u2*v1;
+						ny = u2*v0 - u0*v2;
+						nz = u0*v1 - u1*v0;
+
+						// printf("nx %f %f %f\n", nx, ny, nz);
+
+						u0 = rc2VX - rc3VX;
+						u1 = rc2VY - rc3VY;
+						u2 = rc2VZ - rc3VZ;
+
+						v0 = rc4VX - rc3VX;
+						v1 = rc4VY - rc3VY;
+						v2 = rc4VZ - rc3VZ;
+
+						nx += u1*v2 - u2*v1;
+						ny += u2*v0 - u0*v2;
+						nz += u0*v1 - u1*v0;
+
+
+
+						normals[c1V*3+0] += nx;
+						normals[c1V*3+1] += ny;
+						normals[c1V*3+2] += nz;
+
+						normals[c2V*3+0] += nx;
+						normals[c2V*3+1] += ny;
+						normals[c2V*3+2] += nz;
+
+						normals[c3V*3+0] += nx;
+						normals[c3V*3+1] += ny;
+						normals[c3V*3+2] += nz;
+
+						normals[c4V*3+0] += nx;
+						normals[c4V*3+1] += ny;
+						normals[c4V*3+2] += nz;
 					}
 				}
-		// 		++i;
-		// 	}
-		// 	i = i - X_WIN_SIZE + Y_OFF;
-		// }
-		// i = i - Y_WIN_SIZE * Y_OFF + Z_OFF;
+				++i;
+			}
+			i = i - X_WIN_SIZE + Y_OFF;
+		}
+		i = i - Y_WIN_SIZE * Y_OFF + Z_OFF;
 	}
+
+	int t1, t2, t3;
+
+	for (int i = 0; i < quadCount * 2; ++i) {
+		t1 = triangles[i * 3 + 0];
+		t2 = triangles[i * 3 + 1];
+		t3 = triangles[i * 3 + 2];
+
+		normalsSmoothed[t1 * 3 + 0] += normals[t2 * 3 + 0] + normals[t3 * 3 + 0];
+		normalsSmoothed[t1 * 3 + 1] += normals[t2 * 3 + 1] + normals[t3 * 3 + 1];
+		normalsSmoothed[t1 * 3 + 2] += normals[t2 * 3 + 2] + normals[t3 * 3 + 2];
+
+		normalsSmoothed[t2 * 3 + 0] += normals[t1 * 3 + 0] + normals[t3 * 3 + 0];
+		normalsSmoothed[t2 * 3 + 1] += normals[t1 * 3 + 1] + normals[t3 * 3 + 1];
+		normalsSmoothed[t2 * 3 + 2] += normals[t1 * 3 + 2] + normals[t3 * 3 + 2];
+
+		normalsSmoothed[t3 * 3 + 0] += normals[t2 * 3 + 0] + normals[t1 * 3 + 0];
+		normalsSmoothed[t3 * 3 + 1] += normals[t2 * 3 + 1] + normals[t1 * 3 + 1];
+		normalsSmoothed[t3 * 3 + 2] += normals[t2 * 3 + 2] + normals[t1 * 3 + 2];
+	}
+
+	free(normals);
 
 	for (int i = TOTAL_VOXELS; i >= 0; --i) {
 		counts[i] = 0;
@@ -269,6 +341,7 @@ dmc_result* dual_marching_cubes(uint16_t* voxelToSegId, int segId) {
 	ret->quadCount = quadCount;
 	ret->vertCount = vertCount;
 	ret->vertices = vertices;
+	ret->normals = normalsSmoothed;
 	ret->triangles = triangles;
 
 
@@ -276,28 +349,28 @@ dmc_result* dual_marching_cubes(uint16_t* voxelToSegId, int segId) {
 }
 
 
-// int main() {
-// 	// printf("%f\n", DM_VERTICES[120]);
+int main() {
+	// printf("%f\n", DM_VERTICES[120]);
 
-// 	// read segmentation
-// 	uint16_t* voxelToSegId;
-// 	voxelToSegId = (uint16_t*)malloc(TOTAL_VOXELS * sizeof(uint16_t));
+	// read segmentation
+	uint16_t* voxelToSegId;
+	voxelToSegId = (uint16_t*)malloc(TOTAL_VOXELS * sizeof(uint16_t));
 
-// 	voxelToSegId[128 + 128 * Y_OFF + 128 * Z_OFF] = 50;
+	voxelToSegId[128 + 128 * Y_OFF + 128 * Z_OFF] = 50;
 
-// 	// FILE *readPtr = fopen("segmentation", "rb");
-// 	// fread(voxelToSegId, 256 * 256 * 256, sizeof(uint16_t), readPtr);
-// 	// fclose(readPtr);
-// 	///
+	// FILE *readPtr = fopen("segmentation", "rb");
+	// fread(voxelToSegId, 256 * 256 * 256, sizeof(uint16_t), readPtr);
+	// fclose(readPtr);
+	///
 
-// 	dmc_result* test = dual_marching_cubes(voxelToSegId, 50);
+	dmc_result* test = dual_marching_cubes(voxelToSegId, 50);
 
-// 	printf("testing struct %d\n", test->quadCount);
+	printf("testing struct %d\n", test->quadCount);
 
-// 	free(voxelToSegId);
+	free(voxelToSegId);
 
-// 	return 0;
-// }
+	return 0;
+}
 
 
 }

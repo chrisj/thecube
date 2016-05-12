@@ -108,11 +108,11 @@ Shaders = {
 			color: { type: "c", value: new THREE.Color( 0xffffff ) },
 			opacity: { type: "f", value: 1.0 },
 
-			diffuse: { type: "c", value: new THREE.Color( 0xeeeeee ) },
-			ambient: { type: "c", value: new THREE.Color( 0xffffff ) },
-			specular: { type: "c", value: new THREE.Color( 0x666666 ) },
+			specular: { type: "c", value: new THREE.Color( 0x333333 ) },
 			shininess: { type: "f", value: 30 },
-			ambientLightColor: { type: "c", value: new THREE.Color( 0x111111 ) },
+
+			diffuse: { type: "c", value: new THREE.Color( 0x888888 ) },
+			ambientLightColor: { type: "c", value: new THREE.Color( 0x666666 ) },
 		},
 
 		vertexShader: `
@@ -134,10 +134,10 @@ Shaders = {
 		fragmentShader: `
 			uniform float opacity;
 			uniform vec3 diffuse;
-			uniform vec3 ambient;
+			uniform vec3 color;
+
 			uniform vec3 specular;
 			uniform float shininess;
-			uniform vec3 color;
 
 			uniform bool clip;
 
@@ -176,7 +176,7 @@ Shaders = {
 
 					vec3 dirSpecular = specular * dirSpecularWeight * dirDiffuseWeight;
 
-					gl_FragColor.rgb = gl_FragColor.rgb * ( dirDiffuse + ambientLightColor * ambient ) + dirSpecular;
+					gl_FragColor.rgb = gl_FragColor.rgb * ( dirDiffuse + ambientLightColor ) + dirSpecular;
 				}
 			}`
 	}

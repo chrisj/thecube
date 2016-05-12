@@ -33,7 +33,8 @@ var dmc_result_struct = {
 	vertCount: 'i32',
 
 	vertices: 'float*',
-	triangles: 'i16*'
+	normals: 'float*',
+	triangles: 'i32*'
 }
 
 function readStruct (ptr, struct) {
@@ -58,11 +59,14 @@ function generateMeshForSegId(segId, min, max, callback) {
 
 	var positions = Module.HEAPU8.buffer.slice(res.vertices, res.vertices + res.vertCount * 3 * 4);
 
-	var triangles = Module.HEAPU8.buffer.slice(res.triangles, res.triangles + res.quadCount * 2 * 3 * 2);
+	var normals = Module.HEAPU8.buffer.slice(res.normals, res.normals + res.vertCount * 3 * 4);
 
-	postMessage({ callback: callback, msg: { segId: segId, positions: positions, triangles: triangles, } }, [positions, triangles]);
+	var triangles = Module.HEAPU8.buffer.slice(res.triangles, res.triangles + res.quadCount * 2 * 3 * 4);
+
+	postMessage({ callback: callback, msg: { segId: segId, positions: positions, normals: normals, triangles: triangles, } }, [positions, normals, triangles]);
 
 	Module._free(res.vertices);
+	Module._free(res.normals);
 	Module._free(res.triangles);
 	Module._free(res);
 }

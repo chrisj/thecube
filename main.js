@@ -274,19 +274,10 @@ function workerGenerateMesh(segId, wireframe, origin, callback) {
 
     var segGeo = new THREE.BufferGeometry();
 
-    segGeo.setIndex( new THREE.BufferAttribute( new Uint16Array(data.triangles), 1 ) );
-
+    segGeo.setIndex( new THREE.BufferAttribute( new Uint32Array(data.triangles), 1 ) );
     segGeo.addAttribute('position', new THREE.BufferAttribute(new Float32Array(data.positions), 3));
-
-    segGeo.computeVertexNormals();
-
-    var idxArr = segGeo.index.array;
-    var posArr = segGeo.attributes.position.array;
-
-
-    for (let i = 0; i < posArr.length; i++) {
-      posArr[i] /= 256;
-    }
+    segGeo.addAttribute('normal', new THREE.BufferAttribute(new Float32Array(data.normals), 3));
+    segGeo.normalizeNormals();
 
     var meshFunc = wireframe ? generateWireframeForSegment : generateMeshForSegment;
     var mesh = meshFunc(data.segId, segGeo);
