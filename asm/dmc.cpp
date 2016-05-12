@@ -4,7 +4,7 @@ extern "C" {
 #include <stdint.h>
 #include <math.h>
 #include <stdio.h>
-#include <time.h>
+// #include <time.h>
 
 static const int X_DIM = 256;
 static const int Y_DIM = 256;
@@ -86,33 +86,48 @@ struct dmc_result {
 	uint32_t *triangles;
 };
 
-dmc_result* dual_marching_cubes(uint16_t* voxelToSegId, int segId) {
-	clock_t begin, end;
-	double time_spent;
-	begin = clock();
+dmc_result* dual_marching_cubes(uint16_t* voxelToSegId, int segId, int startX, int startY, int startZ, int endX, int endY, int endZ) {
+	// clock_t begin, end;
+	// double time_spent;
+	// begin = clock();
 
 	uint32_t quadCount = 0;
 	uint32_t vertCount = 0;
 
-	int center = 128 + 128 * Y_OFF + 128 * Z_OFF;
+	// move start by 1 since marching overshoots
+	startX--;
+	startY--;
+	startZ--;
 
-	for (int i = TOTAL_VOXELS - 1; i >= 0; --i) {
-		if (voxelToSegId[i] == segId) {
-			counts[i                        ] |= 1;
-			counts[i - X_OFF                ] |= 2;
-			counts[i         - Y_OFF        ] |= 16;
-			counts[i - X_OFF - Y_OFF        ] |= 32;
-			counts[i                 - Z_OFF] |= 8;
-			counts[i - X_OFF         - Z_OFF] |= 4;
-			counts[i         - Y_OFF - Z_OFF] |= 128;
-			counts[i - X_OFF - Y_OFF - Z_OFF] |= 64;
+	int X_WIN_SIZE = endX - startX + 1;
+	int Y_WIN_SIZE = endY - startY + 1;
+
+	int x, y, z;
+
+	int i = endX + endY * Y_OFF + endZ * Z_OFF;
+	for (z = endZ; z >= startZ; --z) {
+		for (y = endY; y >= startY; --y) {
+			for (x = endX; x >= startX; --x) {
+				if (voxelToSegId[i] == segId) {
+					counts[i                        ] |= 1;
+					counts[i - X_OFF                ] |= 2;
+					counts[i         - Y_OFF        ] |= 16;
+					counts[i - X_OFF - Y_OFF        ] |= 32;
+					counts[i                 - Z_OFF] |= 8;
+					counts[i - X_OFF         - Z_OFF] |= 4;
+					counts[i         - Y_OFF - Z_OFF] |= 128;
+					counts[i - X_OFF - Y_OFF - Z_OFF] |= 64;
+				}
+
+				vertCount += DM_VERT_COUNT[counts[i]];
+				quadCount += DM_QUAD_COUNT[counts[i]];
+
+				--i;
+			}
+			i = i + X_WIN_SIZE - Y_OFF;
 		}
-
-		vertCount += DM_VERT_COUNT[counts[i]];
-		quadCount += DM_QUAD_COUNT[counts[i]];
+		i = i + Y_WIN_SIZE * Y_OFF - Z_OFF;
 	}
-
-	printf("QC %d VC %d\n", quadCount, vertCount);
 
 	// allocate verts and quads
 	float *vertices;
@@ -126,6 +141,8 @@ dmc_result* dual_marching_cubes(uint16_t* voxelToSegId, int segId) {
 
 	uint32_t *triangles;
 	triangles = (uint32_t*)calloc((quadCount * 2 * 3), sizeof(uint32_t));
+	//
+
 
 	int curVertCount = 0;
 	int curQuadCount = 0;
@@ -136,8 +153,6 @@ dmc_result* dual_marching_cubes(uint16_t* voxelToSegId, int segId) {
 	int cubeIndex;
 
 	int vertOffset;
-
-	int x, y, z;
 
 	int edge;
 	int edge2;
@@ -154,43 +169,26 @@ dmc_result* dual_marching_cubes(uint16_t* voxelToSegId, int segId) {
 
 	float dist1Squared, dist2Squared;
 
-	int startX = 0;
-	int startY = 0;
-	int startZ = 0;
-	int endX = 255;
-	int endY = 255;
-	int endZ = 255;
-
-	int X_WIN_SIZE = endX - startX + 1;
-	int Y_WIN_SIZE = endY - startY + 1;
-
-	int i = startX + startY * X_DIM + startZ * X_DIM * Y_DIM;
-
 	float u0, u1, u2, v0, v1, v2;
 
 	float nx, ny, nz;
 
+	i = startX + startY * Y_OFF + startZ * Z_OFF;
 	for (z = startZ; z <= endZ; ++z) {
 		for (y = startY; y <= endY; ++y) {
 			for (x = startX; x <= endX; ++x) {
-				// counts[i - X_OFF - Y_OFF - Z_OFF - 1] = 0; // TODO, this will be out of bounds at 1,1,1
-		// for (int i = 0; i < TOTAL_VOXELS; ++i) {
 				cubeIndex = counts[i];
 
 				if (cubeIndex != 0 && cubeIndex != 255) {
-					// z = floor(i / Z_OFF);
-					// y = floor((i - z * Z_OFF) / Y_OFF);
-					// x = i % Y_OFF;
-
 					vertIdx[i] = curVertCount;
 
 					vertsForCube = DM_VERT_COUNT[cubeIndex];
 					for (int j = 0; j < vertsForCube; j++) {
 						vertOffset = cubeIndex * 12 + j * 3; // woops forgot the 3, 3 is the # of dimensions
 
-						vertices[curVertCount*3+0] = (x + DM_VERTICES[vertOffset]) / 256;
-						vertices[curVertCount*3+1] = (y + DM_VERTICES[vertOffset+1]) / 256;
-						vertices[curVertCount*3+2] = (z + DM_VERTICES[vertOffset+2]) / 256;
+						vertices[curVertCount*3+0] = (x + DM_VERTICES[vertOffset] + 0.5) / 256;
+						vertices[curVertCount*3+1] = (y + DM_VERTICES[vertOffset+1] + 0.5) / 256;
+						vertices[curVertCount*3+2] = (z + DM_VERTICES[vertOffset+2] + 0.5) / 256;
 						curVertCount++;
 					}
 
@@ -208,8 +206,6 @@ dmc_result* dual_marching_cubes(uint16_t* voxelToSegId, int segId) {
 						c2V = vertIdx[c2] + DM_EDGES[counts[c2] * 12 + EDGE_TO_CELLS_EDGES[edge2 * 3 + 0]];
 						c3V = vertIdx[c3] + DM_EDGES[counts[c3] * 12 + EDGE_TO_CELLS_EDGES[edge2 * 3 + 1]];
 						c4V = vertIdx[c4] + DM_EDGES[counts[c4] * 12 + EDGE_TO_CELLS_EDGES[edge2 * 3 + 2]];
-
-						// printf("test %d %d %d %d\n", c1V, c2V, c3V, c4V);
 
 						rc1VX = vertices[c1V * 3 + 0];
 						rc1VY = vertices[c1V * 3 + 1];
@@ -326,16 +322,24 @@ dmc_result* dual_marching_cubes(uint16_t* voxelToSegId, int segId) {
 
 	free(normals);
 
-	for (int i = TOTAL_VOXELS; i >= 0; --i) {
-		counts[i] = 0;
+	// cleanup
+	i = startX + startY * Y_OFF + startZ * Z_OFF;
+	for (z = startZ; z <= endZ; ++z) {
+		for (y = startY; y <= endY; ++y) {
+			for (x = startX; x <= endX; ++x) {
+				counts[i] = 0;
+				++i;
+			}
+			i = i - X_WIN_SIZE + Y_OFF;
+		}
+		i = i - Y_WIN_SIZE * Y_OFF + Z_OFF;
 	}
 
-	end = clock();
+	// end = clock();
 
-	time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
+	// time_spent = (double)(end - begin) * 1000 / CLOCKS_PER_SEC;
 
-	printf("time = %fms\n", time_spent);
-
+	// printf("time = %fms\n", time_spent);
 
 	dmc_result* ret = (dmc_result*)malloc(sizeof(dmc_result));
 	ret->quadCount = quadCount;
@@ -363,7 +367,7 @@ int main() {
 	// fclose(readPtr);
 	///
 
-	dmc_result* test = dual_marching_cubes(voxelToSegId, 50);
+	dmc_result* test = dual_marching_cubes(voxelToSegId, 50, 1,1,1,255,255,255);
 
 	printf("testing struct %d\n", test->quadCount);
 

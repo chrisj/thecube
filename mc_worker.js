@@ -10,7 +10,7 @@ importScripts('./asm/marching_cubes.js');
 // );
 
 var dualMarchingCubes = Module.cwrap(
-  'dual_marching_cubes', 'number', ['number', 'number']
+  'dual_marching_cubes', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']
 );
 
 var pixelToSegIdPtr;
@@ -49,9 +49,10 @@ function readStruct (ptr, struct) {
 }
 
 function generateMeshForSegId(segId, min, max, callback) {
-	console.log('generating mesh for', segId);
-	var res = readStruct(dualMarchingCubes(pixelToSegIdPtr, segId), dmc_result_struct);
-	console.log('finished', segId, res);
+	var res = readStruct(
+		dualMarchingCubes(pixelToSegIdPtr, segId, min.x, min.y, min.z, max.x, max.y, max.z),
+		dmc_result_struct
+	);
 
 	// var arrSizeBytes = new Float32Array(Module.HEAPU8.buffer, meshPtr, 1)[0] * 4;
 
