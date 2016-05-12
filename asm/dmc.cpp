@@ -186,7 +186,7 @@ dmc_result* dual_marching_cubes(uint16_t* voxelToSegId, int segId) {
 
 					vertsForCube = DM_VERT_COUNT[cubeIndex];
 					for (int j = 0; j < vertsForCube; j++) {
-						vertOffset = cubeIndex * 12 + j;
+						vertOffset = cubeIndex * 12 + j * 3; // woops forgot the 3, 3 is the # of dimensions
 
 						vertices[curVertCount*3+0] = (x + DM_VERTICES[vertOffset]) / 256;
 						vertices[curVertCount*3+1] = (y + DM_VERTICES[vertOffset+1]) / 256;
