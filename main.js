@@ -256,9 +256,29 @@ function camInfo() {
 
 var startMarch;
 
+function workerGenerateAggMesh(callback) {
+  var unique = MCWorker.count++;
 
-function workerGenerateMesh(segId, wireframe, origin, callback) {
-  var msg = { name: 'segId', wireframe: wireframe, origin: origin, data: segId, min: SegmentManager.segments[segId].min, max: SegmentManager.segments[segId].max };
+  MCWorker.callbacks[unique] = function (data) {
+    var segGeo = new THREE.BufferGeometry();
+
+    segGeo.setIndex( new THREE.BufferAttribute( new Uint32Array(data.triangles), 1 ) );
+    segGeo.addAttribute('position', new THREE.BufferAttribute(new Float32Array(data.positions), 3));
+
+    if (data.normals) {
+      segGeo.addAttribute('normal', new THREE.BufferAttribute(new Float32Array(data.normals), 3));
+      segGeo.normalizeNormals();
+    }
+
+    var mesh = generateMeshForAgg(segGeo);
+    callback(mesh);
+  };
+
+  MCWorker.postMessage({ name: 'agg', callback: unique });
+}
+
+function workerGenerateMesh(segId, type, origin, callback) {
+  var msg = { origin: origin, data: segId, min: SegmentManager.segments[segId].min, max: SegmentManager.segments[segId].max };
 
   console.log('asking for mesh', segId);
 
@@ -275,18 +295,23 @@ function workerGenerateMesh(segId, wireframe, origin, callback) {
     var segGeo = new THREE.BufferGeometry();
 
     segGeo.setIndex( new THREE.BufferAttribute( new Uint32Array(data.triangles), 1 ) );
-    segGeo.addAttribute('position', new THREE.BufferAttribute(new Float32Array(data.positions), 3));
-    segGeo.addAttribute('normal', new THREE.BufferAttribute(new Float32Array(data.normals), 3));
-    segGeo.normalizeNormals();
+    var positions = new Float32Array(data.positions);
+    // console.log(positions);
+    segGeo.addAttribute('position', new THREE.BufferAttribute(positions, 3));
 
-    var meshFunc = wireframe ? generateWireframeForSegment : generateMeshForSegment;
+    if (data.normals) {
+      segGeo.addAttribute('normal', new THREE.BufferAttribute(new Float32Array(data.normals), 3));
+      segGeo.normalizeNormals();
+    }
+
+    var meshFunc = type === 'wireframe' ? generateWireframeForSegment : generateMeshForSegment;
     var mesh = meshFunc(data.segId, segGeo);
     mesh.segId = segId;
 
     callback(data.segId, mesh);
   };
 
-  MCWorker.postMessage({ callback: unique, msg: msg });
+  MCWorker.postMessage({ name: type, callback: unique, msg: msg });
 }
 
 //  I may want to consider a different shader
@@ -298,14 +323,51 @@ function generateWireframeForSegment(segId, segGeo) {
     new THREE.Vector3( 0, 0, 1 )
   ];
 
-  var position = segGeo.attributes.position;
-  var centers = new Float32Array( position.count * 3 );
+  var posArr = segGeo.attributes.position.array;
 
-  for ( var i = 0, l = position.count; i < l; i ++ ) {
+  var unsharedPositions = new Float32Array(segGeo.index.count * 3);
+
+  var centers = new Float32Array(segGeo.index.count * 3);
+
+  for (var i = 0; i < segGeo.index.count / 2; i++) {
+    var v1 = segGeo.index.array[i * 6 + 0];
+    var v2 = segGeo.index.array[i * 6 + 1];
+    var v3 = segGeo.index.array[i * 6 + 2];
+    var v4 = segGeo.index.array[i * 6 + 5];
+
+    unsharedPositions[i * 6 * 3 + 0] = posArr[v1 * 3 + 0];
+    unsharedPositions[i * 6 * 3 + 1] = posArr[v1 * 3 + 1];
+    unsharedPositions[i * 6 * 3 + 2] = posArr[v1 * 3 + 2];
+
+    unsharedPositions[i * 6 * 3 + 3] = posArr[v2 * 3 + 0];
+    unsharedPositions[i * 6 * 3 + 4] = posArr[v2 * 3 + 1];
+    unsharedPositions[i * 6 * 3 + 5] = posArr[v2 * 3 + 2];
+
+    unsharedPositions[i * 6 * 3 + 6] = posArr[v3 * 3 + 0];
+    unsharedPositions[i * 6 * 3 + 7] = posArr[v3 * 3 + 1];
+    unsharedPositions[i * 6 * 3 + 8] = posArr[v3 * 3 + 2];
+
+    unsharedPositions[i * 6 * 3 + 9]  = posArr[v4 * 3 + 0];
+    unsharedPositions[i * 6 * 3 + 10] = posArr[v4 * 3 + 1];
+    unsharedPositions[i * 6 * 3 + 11] = posArr[v4 * 3 + 2];
+
+    unsharedPositions[i * 6 * 3 + 12] = posArr[v2 * 3 + 0];
+    unsharedPositions[i * 6 * 3 + 13] = posArr[v2 * 3 + 1];
+    unsharedPositions[i * 6 * 3 + 14] = posArr[v2 * 3 + 2];
+
+    unsharedPositions[i * 6 * 3 + 15] = posArr[v3 * 3 + 0];
+    unsharedPositions[i * 6 * 3 + 16] = posArr[v3 * 3 + 1];
+    unsharedPositions[i * 6 * 3 + 17] = posArr[v3 * 3 + 2];
+  }
+
+  for ( var i = 0, l = unsharedPositions.length; i < l; i ++ ) {
     vectors[ i % 3 ].toArray( centers, i * 3 );
   }
 
-  segGeo.addAttribute( 'center', new THREE.BufferAttribute( centers, 3 ) );
+
+  var newGeo = new THREE.BufferGeometry();
+  newGeo.addAttribute( 'position', new THREE.BufferAttribute( unsharedPositions, 3 ) );
+  newGeo.addAttribute( 'center', new THREE.BufferAttribute( centers, 3 ) );
 
   var shader = $.extend(true, {
     transparent: true,
@@ -317,16 +379,31 @@ function generateWireframeForSegment(segId, segGeo) {
   // u.color.value = new THREE.Color(color);
   var material = new THREE.ShaderMaterial(shader);
 
-  var mesh = new THREE.Mesh(segGeo, material);
+  var mesh = new THREE.Mesh(newGeo, material);
   return mesh;
-  }
+}
+
+function generateMeshForAgg(aggGeo) {
+  var shader = $.extend(true, {
+    transparent: false,
+    // side: THREE.DoubleSide
+  }, Shaders.idPacked);
+  
+  var u = shader.uniforms;
+  u.color.value = new THREE.Color("rgb(40, 205, 255)");
+  var material = new THREE.ShaderMaterial(shader);
+
+  var aggMesh = new THREE.Mesh(aggGeo, material);
+
+  return aggMesh;
+}
 
 function generateMeshForSegment(segId, segGeo) {
   var color = SegmentManager.isSeed(segId) ? "rgb(0, 104, 242)" : "rgb(40, 205, 255)";
 
-  if (SegmentManager.segments[segId].multi) {
+  // if (SegmentManager.segments[segId].multi) {
     color = "rgb(255, 255, 0)";
-  }
+  // }
 
   var shader = $.extend(true, {
     transparent: false,
@@ -413,10 +490,19 @@ var SegmentManager = {
     function loadSeedMeshes() {
       console.log('load seeds', _this.seeds);
       _this.seeds.forEach(function (segId) {
-        workerGenerateMesh(segId, false, null, function (segId, mesh) {
+        workerGenerateMesh(segId, 'normal', null, function (segId, mesh) {
           SegmentManager.addMesh(segId, mesh, false);
           SegmentManager.displayMesh(segId, false);
         });
+      });
+
+      workerGenerateAggMesh(function (mesh) {
+        _this.seeds.forEach(function (segId) {
+          _this.hideMesh(segId, false, true);
+        });
+        aggMeshHolder.remove(aggMeshHolder.children[0]);
+        aggMeshHolder.add(mesh);
+        needsRender = true;
       });
     }
 
@@ -459,7 +545,7 @@ var SegmentManager = {
         this.segments[segId].origin = origin;
         console.log('request mesh', segId);
         this.segments[segId].state = 'preload';
-        workerGenerateMesh(segId, true, origin, function (segId, mesh) {
+        workerGenerateMesh(segId, 'wireframe', origin, function (segId, mesh) {
           _this.segments[segId].state = 'loaded';
           console.log('got mesh', segId);
           if (!swap) {
@@ -512,10 +598,19 @@ var SegmentManager = {
       return;
     }
 
+    var _this = this;
+
     Object.assign(this.segments[segId], { selected: true, cb: cb, multi: !!multi });
-    workerGenerateMesh(segId, false, null, function (segId, mesh) {
+    workerGenerateMesh(segId, 'normal', null, function (segId, mesh) {
       SegmentManager.addMesh(segId, mesh, false);
       SegmentManager.displayMesh(segId, false);
+
+      workerGenerateAggMesh(function (mesh) {
+        _this.hideMesh(segId, false, true);
+        aggMeshHolder.remove(aggMeshHolder.children[0]);
+        aggMeshHolder.add(mesh);
+        needsRender = true;
+      });
     });
 
     // animate to center of segment, it would be nice to animate to center of mass, also maybe only for big segments
@@ -547,8 +642,15 @@ var SegmentManager = {
 
     // TileManager.currentTile().draw();
 
-    // temporary
-    this.hideMesh(segId);
+    MCWorker.postMessage({ name: 'deselect', msg: { segId: segId, min: SegmentManager.segments[segId].min, max: SegmentManager.segments[segId].max } });
+
+    this.hideMesh(segId, false, false);
+
+    workerGenerateAggMesh(function (mesh) {
+      aggMeshHolder.remove(aggMeshHolder.children[0]);
+      aggMeshHolder.add(mesh);
+      needsRender = true;
+    });
   },
   displayMesh: function (segId, wireframe) {
     if (this.visibleHover !== undefined) {
@@ -594,7 +696,7 @@ var SegmentManager = {
 
     needsRender = true;
   },
-  hideMesh: function (segId, wireframe) {
+  hideMesh: function (segId, wireframe, interactive) {
     if (wireframe) {
       if (this.segments[segId].tween) {
         this.segments[segId].tween.stop();
@@ -622,7 +724,9 @@ var SegmentManager = {
 
     } else {
       segments.remove(this.segments[segId].mesh);
-      segmentInteraction.remove(this.segments[segId].interactiveMesh);
+      if (!interactive) {
+        segmentInteraction.remove(this.segments[segId].interactiveMesh);
+      }
     }
 
     needsRender = true;
@@ -1056,8 +1160,12 @@ cube.add(cubeContents);
 
 // cubeContents.add(mesh2);
 
+var aggMeshHolder = new THREE.Object3D();
+cubeContents.add(aggMeshHolder);
+
+aggMeshHolder.add(new THREE.Object3D());
+
 var segments = new THREE.Object3D();
-segments.name = 'is segacious a word?';
 cubeContents.add(segments);
 
 var wfSegments = new THREE.Object3D();
